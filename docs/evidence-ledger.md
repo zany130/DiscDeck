@@ -105,14 +105,14 @@ Build `c80709b` toasted `physical revision` plus a counter for mount, unmount, a
 
 ## Phase 1 physical actions
 
-Mount, unmount, and confirmed eject are implemented. Mount uses the read-only option. Tray close returns `TRAY_CLOSE_UNSUPPORTED` and does not issue a close command. On 2026-11-10 the gaming PC reported that empty-drive mount and unmount returned `NOT_READY`, and that eject opened the tray as expected. A filesystem mount, an unmount of a DiscDeck mount, an audio disc, and an unplug/replug were not run, so P0-B stays blocked and `hardware_validated` stays false.
+Mount, unmount, and confirmed eject are implemented. Mount uses the read-only option. Tray close returns `TRAY_CLOSE_UNSUPPORTED` and does not issue a close command. On 2026-11-10 the gaming PC reported that empty-drive mount and unmount returned `NOT_READY`, and that eject opened the tray. Later the same day the user reported that all six follow-up checks passed: a data disc showed media present, read-only mount behaved as specified, DiscDeck unmount removed that mount, an audio disc was refused, eject with a DiscDeck mount unmounted and opened the tray, and after unplug/replug the model names stayed with the right drives. The report does not include the mount path, which drive was used, or the `sr` numbers before and after the replug. Mixed-mode media was not part of the six. `hardware_validated` stays false.
 
 ## Gate ledger
 
 | Gate | Status | Why it is not PASS |
 |---|---|---|
 | P0-A Decky runtime | BLOCKED | Identity and probe events 24–26 were observed on build `a634c8e`. Logger files, listener cleanup, and directory durability were not checked |
-| P0-B Physical drives | BLOCKED | Inventory, empty-drive `NOT_READY` mount/unmount, and a successful eject were observed. A data-disc mount, DiscDeck unmount, audio/mixed media, and unplug/replug were not run. Tray close is intentionally unsupported |
+| P0-B Physical drives | BLOCKED | The user reported the six physical checks passed on 2026-11-10: data-disc media present, read-only mount, DiscDeck unmount, audio-disc refusal, eject of a DiscDeck mount, and correct model names after unplug/replug. The mount path, drive identity, and old/new `sr` numbers were not recorded. Mixed-mode media was not tested. Tray close is intentionally unsupported |
 | P0-C Permissions | BLOCKED | ACL fixtures and denial tests exist. Plugin-process SG_IO and polkit were not run |
 | P0-D Redumper | BLOCKED | Build `a338878` found the distrobox wrapper and did not execute it. No disc was dumped |
 | P0-E CDEmu / VHBA | BLOCKED | Presence checks exist. No interface handshake or image load was performed, and the daemon was not started |
