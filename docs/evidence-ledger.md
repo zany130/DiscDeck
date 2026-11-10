@@ -95,6 +95,10 @@ Observed on the gaming PC after installing build `a634c8e`, with the plugin runn
 
 Build `a338878` was installed from the development URL and refreshed on the same machine. UDisks2 read as `observed`. All three drives reported `no media`, kept the same `sr`/`sg` mapping and shared-bridge lines, and still said operations were not run. Redumper read as `distrobox_wrapper`, version `not_executed`, executed no. CDEmu stayed `DAEMON_INACTIVE` with VHBA loaded, and Steam still listed 21 tool directories without reading shortcuts. The wrapper was not executed.
 
+## Eject log from build 4574acb
+
+The attached plugin log `2026-11-09 22.19.10` contains only the startup line. Mount and unmount returned the expected `NOT_READY` results. Eject reached UDisks2 and failed, but that failure was not written to the plugin log. UDisks2 `Drive.Eject` authorizes through polkit and then runs the `eject` command. The plugin process is outside the login session, so that authorization can fail. The next build logs the UDisks2 result and, only after that denial, runs `eject` on the matching `/dev/srN` as the current user when that node is writable. It does not use root and does not close trays.
+
 ## Phase 1 action feedback
 
 Build `c80709b` toasted `physical revision` plus a counter for mount, unmount, and eject. That toast came from the change event, and the following refresh cleared the real result, so a refused eject looked like a silent no-op. The next build keeps the UDisks2 code and message on screen. A direct `NotAuthorized` retries the same `Drive.Eject` inside the user session. It still does not use an ioctl, and no host tray has been recorded as opened.

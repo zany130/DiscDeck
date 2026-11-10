@@ -22,7 +22,7 @@ class CommandRunner:
     def __init__(self, policy: Any = assert_readonly_argv) -> None:
         self.policy = policy
 
-    def __call__(self, argv: list[str], timeout: float = 5) -> CommandResult:
+    def __call__(self, argv: list[str], timeout: float = 5, env: dict[str, str] | None = None) -> CommandResult:
         self.policy(argv)
         try:
             completed = subprocess.run(
@@ -32,6 +32,7 @@ class CommandRunner:
                 capture_output=True,
                 text=True,
                 timeout=timeout,
+                env=env,
             )
         except FileNotFoundError:
             return CommandResult(argv, 127, "", "not found")
@@ -48,7 +49,8 @@ class ScriptedRunner:
         self.calls: list[list[str]] = []
         self.policy = policy
 
-    def __call__(self, argv: list[str], timeout: float = 5) -> CommandResult:
+    def __call__(self, argv: list[str], timeout: float = 5, env: dict[str, str] | None = None) -> CommandResult:
+        del env
         self.policy(argv)
         self.calls.append(list(argv))
         match = self.responses.get(tuple(argv))

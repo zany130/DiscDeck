@@ -8,6 +8,9 @@ UDisks2 reports busy or unauthorized. Tray close is not attempted.
 from __future__ import annotations
 
 import json
+import os
+import re
+from pathlib import Path
 from typing import Any
 
 from discdeck.errors import UnsafeCommand
@@ -139,7 +142,23 @@ class PhysicalOperations:
         finally:
             self._release(drive_id)
         if failure is not None:
+            self._log(f"UDisks2 eject failed for {drive.get('block_node')}: {failure[0]} {failure[1]}")
+            if failure[0] == "PERMISSION_DENIED":
+                fallback = self._user_eject(drive)
+                if fallback is None:
+                    self._log(f"User eject command succeeded for {drive.get('block_node')}.")
+                    return self._ok(
+                        {
+                            "action": "eject",
+                            "drive_id": drive_id,
+                            "hardware_validated": False,
+                            "via": "user-eject",
+                        }
+                    )
+                self._log(f"User eject command was not successful for {drive.get('block_node')}: {fallback}")
+                return self._error("PERMISSION_DENIED", f"{failure[1]} {fallback}")
             return self._error(*failure)
+        self._log(f"UDisks2 eject succeeded for {drive.get('block_node')} via {via}.")
         return self._ok({"action": "eject", "drive_id": drive_id, "hardware_validated": False, "via": via})
 
     def close_tray(self, drive_id: str) -> dict[str, Any]:
@@ -182,7 +201,11 @@ class PhysicalOperations:
         if failure is None or failure[0] != "PERMISSION_DENIED":
             return result, failure, "direct"
         try:
-            retried = self.service.mutation_runner(session_argv(argv), timeout=25)
+            retried = self.service.mutation_runner(
+                session_argv(argv),
+                timeout=25,
+                env=session_environment(getattr(self.service, "environ", {}), int(self.service.os_module.geteuid())),
+            )
         except UnsafeCommand:
             return result, failure, "direct"
         if retried.code == 127:
@@ -192,12 +215,51 @@ class PhysicalOperations:
             return retried, None, "user-session"
         return retried, retry_failure, "user-session"
 
+    def _user_eject(self, drive: dict[str, Any]) -> str | None:
+        node = drive.get("block_node")
+        if not isinstance(node, str) or _SR_NODE.fullmatch(node) is None:
+            return "The block node is not an sr device, so the eject command was not run."
+        access = self.service.access or os.access
+        try:
+            writable = bool(access(node, os.W_OK))
+        except OSError:
+            writable = False
+        if not writable:
+            return "This process cannot write that sr device, so the eject command was not run."
+        try:
+            result = self.service.mutation_runner(["eject", node], timeout=15)
+        except UnsafeCommand as exc:
+            return str(exc)
+        if result.code == 0:
+            return None
+        detail = " ".join(f"{result.stderr} {result.stdout}".split())[:180]
+        return f"The current user's eject command failed ({result.code}). {detail}".strip()
+
+    def _log(self, message: str) -> None:
+        logger = getattr(self.service, "log", None)
+        if callable(logger):
+            logger(message)
+
     def _ok(self, result: dict[str, Any]) -> dict[str, Any]:
         self.service.revision += 1
         return envelope_ok(result, self.service.revision, self.service.epoch)
 
     def _error(self, code: str, message: str) -> dict[str, Any]:
         return envelope_error(code, message, retryable=code in {"DRIVE_BUSY", "STALE_DEVICE", "STALE_MEDIA", "NOT_READY"}, revision=self.service.revision, epoch=self.service.epoch)
+
+
+_SR_NODE = re.compile(r"/dev/sr[0-9]+")
+
+
+def session_environment(base: dict[str, str], euid: int) -> dict[str, str]:
+    env = dict(base)
+    if env.get("XDG_RUNTIME_DIR") or euid <= 0:
+        return env
+    candidate = Path(f"/run/user/{euid}")
+    if candidate.is_dir():
+        env["XDG_RUNTIME_DIR"] = str(candidate)
+        env.setdefault("DBUS_SESSION_BUS_ADDRESS", f"unix:path={candidate}/bus")
+    return env
 
 
 def session_argv(argv: list[str]) -> list[str]:
@@ -296,7 +358,7 @@ def _dbus_failure(result: Any, action: str) -> tuple[str, str] | None:
         or "interactive authentication" in lowered
     ):
         detail = " ".join(text.split())[:180]
-        return ("PERMISSION_DENIED", f"UDisks2 refused {action}. No ioctl fallback was used. {detail}".strip())
+        return ("PERMISSION_DENIED", f"UDisks2 refused {action}. {detail}".strip())
     if "devicebusy" in lowered or "busy" in lowered:
         return ("DRIVE_BUSY", f"UDisks2 reported the drive busy during {action}.")
     detail = " ".join(text.split())[:240]

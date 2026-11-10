@@ -86,6 +86,8 @@ def assert_physical_udisks_argv(argv: list[str]) -> None:
         raise UnsafeCommand("Command arguments must be non-empty strings.")
     if any("\n" in part or "\x00" in part for part in argv):
         raise UnsafeCommand("Command arguments contain unsupported characters.")
+    if Path(argv[0]).name == "eject" and len(argv) == 2 and re.fullmatch(r"/dev/sr[0-9]+", argv[1]):
+        return
     if Path(argv[0]).name == "systemd-run":
         if argv[: len(_SESSION_HEAD)] != _SESSION_HEAD:
             raise UnsafeCommand("systemd-run is only allowed as a user-session wrapper around one UDisks2 call.")

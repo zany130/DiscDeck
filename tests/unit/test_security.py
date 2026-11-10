@@ -22,8 +22,11 @@ class SecurityTests(unittest.TestCase):
 
     def test_physical_calls_are_read_only_mount_unmount_or_eject(self) -> None:
         assert_physical_udisks_argv(mount_argv("/org/freedesktop/UDisks2/block_devices/sr1"))
+        assert_physical_udisks_argv(["eject", "/dev/sr1"])
         with self.assertRaises(UnsafeCommand):
-            assert_physical_udisks_argv(["eject", "/dev/sr1"])
+            assert_physical_udisks_argv(["eject", "-T", "/dev/sr1"])
+        with self.assertRaises(UnsafeCommand):
+            assert_physical_udisks_argv(["eject", "/dev/sda"])
         with self.assertRaises(UnsafeCommand):
             assert_physical_udisks_argv(mount_argv("/org/freedesktop/UDisks2/block_devices/sr1")[:-1] + ["rw"])
 

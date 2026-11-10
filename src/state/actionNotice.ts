@@ -15,6 +15,9 @@ export function actionNotice(response: Envelope<Record<string, unknown>>): strin
     return "Unmounted the DiscDeck filesystem.";
   }
   if (action === "eject") {
+    if (response.result.via === "user-eject") {
+      return "UDisks2 did not authorize this process. The tray command ran as the current user.";
+    }
     return response.result.via === "user-session"
       ? "UDisks2 accepted eject in the user session."
       : "UDisks2 accepted eject.";

@@ -18,6 +18,7 @@ class Plugin:
     def __init__(self) -> None:
         self.lifecycle = Lifecycle()
         self.service = DiagnosticService(environ=dict(os.environ), os_module=os, pwd_module=pwd)
+        self.service.log = lambda message: decky.logger.info("%s", message)
 
     async def _main(self) -> None:
         await self.lifecycle.main()
