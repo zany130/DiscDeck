@@ -15,13 +15,16 @@ from discdeck.adapters.redumper import read_version as read_redumper_version
 from discdeck.adapters.steam import probe_steam
 from discdeck.adapters.udisks2 import probe_udisks
 from discdeck.commands import CommandRunner
+from discdeck.commands import CommandRunner
 from discdeck.models import DEFAULT_MODULE_ENABLED, envelope_error, envelope_ok, module_status
+from discdeck.physical import GenerationTracker, PhysicalOperations
 from discdeck.runtime import probe_runtime, read_build_info
+from discdeck.security import assert_physical_udisks_argv
 from discdeck.settings import load_settings
 
 LIMITATIONS = (
-    "Phase 0 does not mount, unmount, eject, close trays, dump discs, load virtual discs, or launch games.",
-    "Seeing a device, dependency, or permission is not a passed hardware gate.",
+    "Mount, unmount, and eject run only after an explicit request. Tray close is not attempted.",
+    "A readable inventory is not a passed hardware gate. hardware_validated stays false.",
     "Runtime-directory durability across Decky restarts was not measured.",
     "Redumper is not executed when the discovered file is a container wrapper.",
     "An inactive CDEmu daemon is not activated and its device methods are not called.",
@@ -37,6 +40,7 @@ class DiagnosticService:
         os_module: Any,
         pwd_module: Any,
         runner: Any | None = None,
+        mutation_runner: Any | None = None,
         sysfs_root: Path | None = None,
         root: Path | None = None,
         dev_root: Path | None = None,
@@ -51,6 +55,9 @@ class DiagnosticService:
         self.os_module = os_module
         self.pwd_module = pwd_module
         self.runner = runner or CommandRunner()
+        self.mutation_runner = mutation_runner or CommandRunner(policy=assert_physical_udisks_argv)
+        self.generations = GenerationTracker()
+        self.physical = PhysicalOperations(self)
         self.sysfs_root = sysfs_root or Path("/sys")
         self.root = root or Path("/")
         self.dev_root = dev_root or Path("/dev")
@@ -73,6 +80,7 @@ class DiagnosticService:
         devices = enumerate_optical(self.sysfs_root, self.epoch)
         udisks = probe_udisks(self.runner)
         _merge_media(devices["drives"], udisks.get("drives", []))
+        self.generations.observe(devices["drives"])
         permission_kwargs: dict[str, Any] = {}
         if self.access is not None:
             permission_kwargs["access"] = self.access
@@ -99,7 +107,7 @@ class DiagnosticService:
         return {
             "epoch": self.epoch,
             "revision": self.revision,
-            "phase": "0",
+            "phase": "1",
             "hardware_validated": False,
             "settings_revision": settings_state["settings_revision"],
             "settings": settings_state,
@@ -142,7 +150,7 @@ class DiagnosticService:
                 epoch=self.epoch,
             )
         return envelope_ok(
-            {"module": modules[0], "hardware_validated": False, "phase": "0"},
+            {"module": modules[0], "hardware_validated": False, "phase": "1"},
             self.revision,
             self.epoch,
         )
@@ -169,6 +177,18 @@ class DiagnosticService:
             return envelope_error("INTERNAL_ERROR", str(exc), retryable=False, revision=self.revision, epoch=self.epoch)
         self.revision += 1
         return envelope_ok(result, self.revision, self.epoch)
+
+    def mount_drive(self, drive_id: str, generation: int, media_generation: int) -> dict[str, Any]:
+        return self.physical.mount(drive_id, generation, media_generation)
+
+    def unmount_drive(self, drive_id: str, generation: int) -> dict[str, Any]:
+        return self.physical.unmount(drive_id, generation)
+
+    def eject_drive(self, drive_id: str, generation: int, confirmed: bool) -> dict[str, Any]:
+        return self.physical.eject(drive_id, generation, confirmed)
+
+    def close_tray(self, drive_id: str) -> dict[str, Any]:
+        return self.physical.close_tray(drive_id)
 
 
 def _modules(
@@ -252,11 +272,17 @@ def _modules(
 
 
 def _physical_capability(devices: dict[str, Any], udisks: dict[str, Any]) -> tuple[str, str, str]:
+    if devices["drives"] and udisks["status"] == "observed":
+        return (
+            "ready",
+            "INVENTORY_OBSERVED",
+            "UDisks2 inventory is readable. Mount and eject are available, but they are not hardware-validated.",
+        )
     if devices["drives"] or udisks["status"] == "observed":
         return (
             "untested",
             "MEDIA_OPERATIONS_NOT_RUN",
-            "Optical inventory was observed. Mount, eject, tray close, and media-change behavior were not run.",
+            "Optical inventory was observed. Mount and eject stay unavailable until UDisks2 can be read.",
         )
     if udisks["status"] == "denied":
         return ("denied", "PERMISSION_DENIED", "UDisks2 refused the read-only object query.")
@@ -310,6 +336,10 @@ def _merge_media(drives: list[dict[str, Any]], udisks_drives: list[dict[str, Any
         media = match.get("media_available")
         drive["media_present"] = media if isinstance(media, bool) else "unknown"
         drive["udisks_optical_property"] = match.get("udisks_optical_property")
+        drive["udisks_block_path"] = match.get("udisks_block_path")
+        drive["udisks_drive_path"] = match.get("udisks_drive_path")
+        drive["filesystem"] = bool(match.get("filesystem"))
+        drive["mount_points"] = list(match.get("mount_points") or [])
         evidence = list(drive["optical_evidence"])
         for item in match.get("optical_evidence", []):
             if item not in evidence:

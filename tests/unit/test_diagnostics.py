@@ -86,8 +86,10 @@ class DiagnosticSnapshotTests(unittest.TestCase):
             snapshot = service.snapshot()
             assert_phase0_unproven(snapshot)
             modules = {item["id"]: item for item in snapshot["modules"]}
-            self.assertEqual(modules["physical"]["capability"], "untested")
-            self.assertEqual(modules["physical"]["reason_code"], "MEDIA_OPERATIONS_NOT_RUN")
+            self.assertEqual(modules["physical"]["capability"], "ready")
+            self.assertEqual(modules["physical"]["reason_code"], "INVENTORY_OBSERVED")
+            self.assertEqual(modules["physical"]["effective"], "active")
+            self.assertFalse(modules["physical"]["hardware_validated"])
             self.assertEqual(modules["images.iso"]["reason_code"], "LOOPSETUP_NOT_RUN")
             self.assertEqual(modules["dump.redumper"]["capability"], "untested")
             self.assertEqual(modules["virtual.cdemu"]["capability"], "untested")

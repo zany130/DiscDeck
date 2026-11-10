@@ -9,9 +9,10 @@ from discdeck.models import envelope_error, envelope_ok
 
 
 class Plugin:
-    """Decky lifecycle and read-only diagnostic endpoints.
+    """Decky lifecycle, diagnostics, and explicit physical actions.
 
-    Production optical actions are intentionally absent.
+    Mount is read-only. Eject requires confirmation. Tray close, dumping,
+    virtual images, and game launch are not implemented.
     """
 
     def __init__(self) -> None:
@@ -22,7 +23,7 @@ class Plugin:
         await self.lifecycle.main()
         self.service.lifecycle_phase = self.lifecycle.phase
         decky.logger.info(
-            "DiscDeck phase 0 diagnostics loaded (effective uid %s). No disc operation was started.",
+            "DiscDeck phase 1 loaded (effective uid %s). No disc operation was started.",
             os.geteuid(),
         )
 
@@ -50,7 +51,7 @@ class Plugin:
     async def ping(self) -> dict:
         self.service.revision += 1
         return envelope_ok(
-            {"pong": True, "phase": "0", "hardware_validated": False},
+            {"pong": True, "phase": "1", "hardware_validated": False},
             self.service.revision,
             self.service.epoch,
         )
@@ -62,3 +63,18 @@ class Plugin:
 
     async def read_redumper_version(self, allow_untested_wrapper: bool = False) -> dict:
         return self.service.redumper_version_envelope(bool(allow_untested_wrapper))
+
+    async def mount_filesystem(self, drive_id: str, generation: int, media_generation: int) -> dict:
+        result = self.service.mount_drive(drive_id, int(generation), int(media_generation))
+        await decky.emit("discdeck:changed", {"epoch": self.service.epoch, "revision": self.service.revision, "domain": "physical", "id": drive_id})
+        return result
+
+    async def unmount_filesystem(self, drive_id: str, generation: int) -> dict:
+        result = self.service.unmount_drive(drive_id, int(generation))
+        await decky.emit("discdeck:changed", {"epoch": self.service.epoch, "revision": self.service.revision, "domain": "physical", "id": drive_id})
+        return result
+
+    async def eject_drive(self, drive_id: str, generation: int, confirmed: bool = False) -> dict:
+        result = self.service.eject_drive(drive_id, int(generation), bool(confirmed))
+        await decky.emit("discdeck:changed", {"epoch": self.service.epoch, "revision": self.service.revision, "domain": "physical", "id": drive_id})
+        return result

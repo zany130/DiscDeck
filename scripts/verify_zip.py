@@ -56,8 +56,8 @@ def verify_zip(path: Path) -> list[str]:
             info = json.loads(archive.read(info_name))
             if info.get("hardware_validated") is not False:
                 errors.append("build_info.json claims hardware validation.")
-            if info.get("phase") != "0":
-                errors.append("build_info.json is not phase 0.")
+            if info.get("phase") != "1":
+                errors.append("build_info.json is not phase 1.")
     return errors
 
 

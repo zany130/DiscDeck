@@ -1,0 +1,270 @@
+"""Phase 1 physical actions.
+
+Mount is read-only and only for a filesystem UDisks2 already exposed. Eject
+requires an explicit confirmation, unmounts that drive first, and stops when
+UDisks2 reports busy or unauthorized. Tray close is not attempted.
+"""
+
+from __future__ import annotations
+
+import json
+from typing import Any
+
+from discdeck.models import envelope_error, envelope_ok
+from discdeck.security import assert_physical_udisks_argv
+
+
+class GenerationTracker:
+    """Session generations. A recycled block node or returning drive gets a new one."""
+
+    def __init__(self) -> None:
+        self._seen: dict[str, dict[str, Any]] = {}
+
+    def observe(self, drives: list[dict[str, Any]]) -> None:
+        present: set[str] = set()
+        for drive in drives:
+            drive_id = str(drive["drive_id"])
+            present.add(drive_id)
+            previous = self._seen.get(drive_id)
+            generation = 1
+            media_generation = 1
+            if previous is not None:
+                generation = int(previous["generation"])
+                media_generation = int(previous["media_generation"])
+                identity_changed = previous.get("absent") or previous.get("block_node") != drive.get("block_node") or previous.get("sysfs_device") != drive.get("sysfs_device")
+                if identity_changed:
+                    generation += 1
+                if previous.get("media_present") != drive.get("media_present"):
+                    media_generation += 1
+            drive["generation"] = generation
+            drive["media_generation"] = media_generation
+            drive["generation_tracking"] = "session"
+            self._seen[drive_id] = {
+                "generation": generation,
+                "media_generation": media_generation,
+                "block_node": drive.get("block_node"),
+                "sysfs_device": drive.get("sysfs_device"),
+                "media_present": drive.get("media_present"),
+                "absent": False,
+            }
+        for drive_id, previous in self._seen.items():
+            if drive_id not in present:
+                previous["absent"] = True
+
+
+class PhysicalOperations:
+    def __init__(self, service: Any) -> None:
+        self.service = service
+        self.leases: dict[str, str] = {}
+        self.owned_mounts: dict[str, dict[str, str]] = {}
+
+    def mount(self, drive_id: str, generation: int, media_generation: int) -> dict[str, Any]:
+        drive, error = self._prepare(drive_id, generation, media_generation, "physical_mount")
+        if error is not None:
+            return error
+        assert drive is not None
+        if drive.get("media_present") is not True:
+            self._release(drive_id)
+            return self._error("NOT_READY", "This drive has no mounted-capable media in the current UDisks2 snapshot.")
+        if not drive.get("filesystem"):
+            self._release(drive_id)
+            return self._error("UNSUPPORTED", "UDisks2 did not expose a filesystem. Audio and blank discs are not mounted.")
+        block_path = drive.get("udisks_block_path")
+        if not isinstance(block_path, str):
+            self._release(drive_id)
+            return self._error("NOT_READY", "UDisks2 has no block object for this drive.")
+        try:
+            result = self.service.mutation_runner(mount_argv(block_path), timeout=20)
+        finally:
+            self._release(drive_id)
+        failure = _dbus_failure(result, "Mount")
+        if failure is not None:
+            return self._error(*failure)
+        mount_path = parse_mount_path(result.stdout)
+        self.owned_mounts[drive_id] = {"block_path": block_path, "mount_path": mount_path or ""}
+        return self._ok(
+            {
+                "action": "mount",
+                "drive_id": drive_id,
+                "mount_path": mount_path,
+                "read_only": True,
+                "hardware_validated": False,
+            }
+        )
+
+    def unmount(self, drive_id: str, generation: int) -> dict[str, Any]:
+        drive, error = self._prepare(drive_id, generation, None, "physical_mount")
+        if error is not None:
+            return error
+        assert drive is not None
+        owned = self.owned_mounts.get(drive_id)
+        if owned is None:
+            self._release(drive_id)
+            return self._error("NOT_READY", "DiscDeck has no mount record for this drive, so it will not unmount a foreign filesystem.")
+        try:
+            result = self.service.mutation_runner(unmount_argv(owned["block_path"]), timeout=20)
+        finally:
+            self._release(drive_id)
+        failure = _dbus_failure(result, "Unmount")
+        if failure is not None:
+            code, message = failure
+            return self._error("UNMOUNT_FAILED" if code not in {"PERMISSION_DENIED", "DRIVE_BUSY"} else code, message)
+        self.owned_mounts.pop(drive_id, None)
+        return self._ok({"action": "unmount", "drive_id": drive_id, "hardware_validated": False})
+
+    def eject(self, drive_id: str, generation: int, confirmed: bool) -> dict[str, Any]:
+        if not confirmed:
+            return self._error("CONSENT_REQUIRED", "Eject needs a second confirmation. No UDisks2 method was called.")
+        drive, error = self._prepare(drive_id, generation, None, "physical_mount")
+        if error is not None:
+            return error
+        assert drive is not None
+        drive_path = drive.get("udisks_drive_path")
+        if not isinstance(drive_path, str):
+            self._release(drive_id)
+            return self._error("NOT_READY", "UDisks2 has no drive object to eject.")
+        try:
+            owned = self.owned_mounts.get(drive_id)
+            mount_points = drive.get("mount_points") or []
+            if owned is not None or mount_points:
+                block_path = owned["block_path"] if owned is not None else drive.get("udisks_block_path")
+                if not isinstance(block_path, str):
+                    return self._error("UNMOUNT_FAILED", "A mount is present, but UDisks2 has no block object to unmount before eject.")
+                unmounted = self.service.mutation_runner(unmount_argv(block_path), timeout=20)
+                failure = _dbus_failure(unmounted, "Unmount")
+                if failure is not None:
+                    code, message = failure
+                    return self._error("UNMOUNT_FAILED" if code not in {"PERMISSION_DENIED", "DRIVE_BUSY"} else code, message)
+                self.owned_mounts.pop(drive_id, None)
+            ejected = self.service.mutation_runner(eject_argv(drive_path), timeout=20)
+        finally:
+            self._release(drive_id)
+        failure = _dbus_failure(ejected, "Eject")
+        if failure is not None:
+            return self._error(*failure)
+        return self._ok({"action": "eject", "drive_id": drive_id, "hardware_validated": False})
+
+    def close_tray(self, drive_id: str) -> dict[str, Any]:
+        return self._error("UNSUPPORTED", f"Tray close for {drive_id} is TRAY_CLOSE_UNSUPPORTED. No ioctl was issued.")
+
+    def _prepare(
+        self,
+        drive_id: str,
+        generation: int,
+        media_generation: int | None,
+        reason: str,
+    ) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+        if not isinstance(drive_id, str) or not drive_id:
+            return None, self._error("UNSUPPORTED", "drive_id is required.")
+        snapshot = self.service.snapshot()
+        physical = next((item for item in snapshot["modules"] if item["id"] == "physical"), None)
+        if physical is None or physical["effective"] != "active":
+            return None, self._error("DEPENDENCY_MISSING", "The physical module is not active, so no mount or eject was attempted.")
+        if drive_id in self.leases:
+            return None, self._error("DRIVE_BUSY", "This drive already has a DiscDeck operation in progress.")
+        drive = next((item for item in snapshot["drives"] if item["drive_id"] == drive_id), None)
+        if drive is None:
+            return None, self._error("DEVICE_LOST", "That drive is not in the current inventory.")
+        if int(drive["generation"]) != int(generation):
+            return None, self._error("STALE_DEVICE", "The drive generation changed. Refresh and choose the drive again.")
+        if media_generation is not None and int(drive["media_generation"]) != int(media_generation):
+            return None, self._error("STALE_MEDIA", "The media generation changed. Refresh before mounting.")
+        self.leases[drive_id] = reason
+        return drive, None
+
+    def _release(self, drive_id: str) -> None:
+        self.leases.pop(drive_id, None)
+
+    def _ok(self, result: dict[str, Any]) -> dict[str, Any]:
+        self.service.revision += 1
+        return envelope_ok(result, self.service.revision, self.service.epoch)
+
+    def _error(self, code: str, message: str) -> dict[str, Any]:
+        return envelope_error(code, message, retryable=code in {"DRIVE_BUSY", "STALE_DEVICE", "STALE_MEDIA", "NOT_READY"}, revision=self.service.revision, epoch=self.service.epoch)
+
+
+def mount_argv(block_path: str) -> list[str]:
+    argv = [
+        "busctl",
+        "--system",
+        "--no-pager",
+        "call",
+        "org.freedesktop.UDisks2",
+        block_path,
+        "org.freedesktop.UDisks2.Filesystem",
+        "Mount",
+        "a{sv}",
+        "1",
+        "options",
+        "s",
+        "ro",
+    ]
+    assert_physical_udisks_argv(argv)
+    return argv
+
+
+def unmount_argv(block_path: str) -> list[str]:
+    argv = [
+        "busctl",
+        "--system",
+        "--no-pager",
+        "call",
+        "org.freedesktop.UDisks2",
+        block_path,
+        "org.freedesktop.UDisks2.Filesystem",
+        "Unmount",
+        "a{sv}",
+        "0",
+    ]
+    assert_physical_udisks_argv(argv)
+    return argv
+
+
+def eject_argv(drive_path: str) -> list[str]:
+    argv = [
+        "busctl",
+        "--system",
+        "--no-pager",
+        "call",
+        "org.freedesktop.UDisks2",
+        drive_path,
+        "org.freedesktop.UDisks2.Drive",
+        "Eject",
+        "a{sv}",
+        "0",
+    ]
+    assert_physical_udisks_argv(argv)
+    return argv
+
+
+def parse_mount_path(stdout: str) -> str | None:
+    text = stdout.strip()
+    if not text:
+        return None
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError:
+        payload = None
+    if isinstance(payload, dict):
+        data = payload.get("data")
+        if isinstance(data, str) and data.startswith("/"):
+            return data
+        if isinstance(data, list) and data and isinstance(data[0], str) and str(data[0]).startswith("/"):
+            return str(data[0])
+    for token in text.replace('"', " ").split():
+        if token.startswith("/"):
+            return token
+    return None
+
+
+def _dbus_failure(result: Any, action: str) -> tuple[str, str] | None:
+    if result.code == 0:
+        return None
+    text = f"{result.stderr}\n{result.stdout}"
+    lowered = text.lower()
+    if "notauthorized" in lowered or "not authorized" in lowered or "access denied" in lowered:
+        return ("PERMISSION_DENIED", f"UDisks2 refused {action}. No ioctl fallback was used.")
+    if "devicebusy" in lowered or "busy" in lowered:
+        return ("DRIVE_BUSY", f"UDisks2 reported the drive busy during {action}.")
+    detail = " ".join(text.split())[:240]
+    return ("UNSUPPORTED", f"UDisks2 {action} failed ({result.code}). {detail}".strip())

@@ -5,7 +5,7 @@
   "api_version": 1,
   "publish": {
     "tags": ["diagnostics", "optical"],
-    "description": "Phase 0 read-only diagnostics for DiscDeck. CI success is not hardware validation.",
+    "description": "DiscDeck physical manager. Inventory can be read, and mount or eject runs only when requested. CI success is not hardware validation.",
     "image": "https://opengraph.githubassets.com/1/zany130/DiscDeck"
   }
 }

@@ -1,23 +1,24 @@
 import unittest
 
-from discdeck.models import FORBIDDEN_READY, default_settings, effective_state, module_status
+from discdeck.models import default_settings, effective_state, module_status
 from discdeck.settings import load_settings
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
 
 class CapabilityPolicyTests(unittest.TestCase):
-    def test_phase0_rejects_ready(self) -> None:
-        with self.assertRaises(ValueError) as caught:
-            module_status(
-                "physical",
-                enabled=True,
-                capability="ready",
-                reason_code=None,
-                message="no",
-                checked_at="2026-11-09T00:00:00+00:00",
-            )
-        self.assertEqual(str(caught.exception), FORBIDDEN_READY)
+    def test_ready_does_not_claim_hardware_validation(self) -> None:
+        status = module_status(
+            "physical",
+            enabled=True,
+            capability="ready",
+            reason_code="INVENTORY_OBSERVED",
+            message="inventory only",
+            checked_at="2026-11-09T00:00:00+00:00",
+        )
+        self.assertEqual(status["effective"], "active")
+        self.assertFalse(status["hardware_validated"])
+        self.assertFalse(status["details"]["hardware_validated"])
 
     def test_effective_precedence(self) -> None:
         self.assertEqual(effective_state(False, "ready", True), "disable_pending")

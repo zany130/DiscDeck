@@ -1,7 +1,8 @@
 import unittest
 
 from discdeck.errors import UnsafeCommand
-from discdeck.security import assert_readonly_argv, redact_home
+from discdeck.physical import mount_argv
+from discdeck.security import assert_physical_udisks_argv, assert_readonly_argv, redact_home
 
 
 class SecurityTests(unittest.TestCase):
@@ -14,9 +15,17 @@ class SecurityTests(unittest.TestCase):
             ["cdemu", "load", "0"],
             ["sudo", "redumper", "--version"],
             ["redumper", "disc", "--drive=/dev/sg1"],
+            ["busctl", "--system", "--no-pager", "call", "org.freedesktop.UDisks2", "/org/freedesktop/UDisks2/block_devices/sr0", "org.freedesktop.UDisks2.Filesystem", "Mount", "a{sv}", "1", "options", "s", "ro"],
         ):
             with self.assertRaises(UnsafeCommand):
                 assert_readonly_argv(argv)
+
+    def test_physical_calls_are_read_only_mount_unmount_or_eject(self) -> None:
+        assert_physical_udisks_argv(mount_argv("/org/freedesktop/UDisks2/block_devices/sr1"))
+        with self.assertRaises(UnsafeCommand):
+            assert_physical_udisks_argv(["eject", "/dev/sr1"])
+        with self.assertRaises(UnsafeCommand):
+            assert_physical_udisks_argv(mount_argv("/org/freedesktop/UDisks2/block_devices/sr1")[:-1] + ["rw"])
 
     def test_read_only_queries_are_allowed(self) -> None:
         assert_readonly_argv(["busctl", "--system", "--no-pager", "list"])

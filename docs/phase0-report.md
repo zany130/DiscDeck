@@ -72,4 +72,4 @@ Optional later, and only with an explicit decision to run them: `redumper --vers
 
 ## Stop line
 
-Phase 1 is not started. The physical manager, ISO mounts, Redumper jobs, CDEmu loads, and the experimental launcher stay blocked until a host run records P0-A and P0-B, and until you accept that evidence.
+Phase 1 adds explicit read-only mount, DiscDeck-owned unmount, and confirmed eject. ISO loops, Redumper jobs, CDEmu loads, and the launcher are not started. Host mount and eject have not been run.

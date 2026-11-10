@@ -182,7 +182,7 @@ def _directory_status(raw: str | None) -> dict[str, Any]:
 
 def read_build_info(module_dir: Path) -> dict[str, Any]:
     path = module_dir / "build_info.json"
-    fallback = {"commit": None, "channel": "development", "phase": "0", "hardware_validated": False}
+    fallback = {"commit": None, "channel": "development", "phase": "1", "hardware_validated": False}
     if not path.is_file():
         return fallback
     try:

@@ -127,6 +127,8 @@ def _summarize(objects: dict[str, dict[str, dict[str, Any]]], *, activated: bool
                 "vendor": drive_props.get("Vendor"),
                 "model": drive_props.get("Model"),
                 "size": block_props.get("Size"),
+                "filesystem": "org.freedesktop.UDisks2.Filesystem" in interfaces,
+                "mount_points": _mount_points(interfaces.get("org.freedesktop.UDisks2.Filesystem", {}).get("MountPoints")),
                 "operations": {"mount": "not_run", "unmount": "not_run", "eject": "not_run", "loop_setup": "not_run"},
                 "hardware_validated": False,
             }
@@ -194,6 +196,22 @@ def _unwrap(value: Any) -> Any:
     if isinstance(value, dict) and "data" in value and "type" in value:
         return _unwrap(value["data"])
     return value
+
+
+def _mount_points(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    points: list[str] = []
+    for item in value:
+        if isinstance(item, list):
+            text = _device_node(item)
+        elif isinstance(item, str):
+            text = item.split("\0", 1)[0]
+        else:
+            continue
+        if text.startswith("/"):
+            points.append(text)
+    return points
 
 
 def _device_node(value: Any) -> str:

@@ -5,6 +5,8 @@ from __future__ import annotations
 import subprocess
 from dataclasses import dataclass
 
+from typing import Any, Callable
+
 from discdeck.security import assert_readonly_argv
 
 
@@ -17,8 +19,11 @@ class CommandResult:
 
 
 class CommandRunner:
+    def __init__(self, policy: Any = assert_readonly_argv) -> None:
+        self.policy = policy
+
     def __call__(self, argv: list[str], timeout: float = 5) -> CommandResult:
-        assert_readonly_argv(argv)
+        self.policy(argv)
         try:
             completed = subprocess.run(
                 argv,
@@ -38,12 +43,13 @@ class CommandRunner:
 class ScriptedRunner:
     """Test double. Records calls and never invokes the operating system."""
 
-    def __init__(self, responses: dict[tuple[str, ...], CommandResult] | None = None) -> None:
+    def __init__(self, responses: dict[tuple[str, ...], CommandResult] | None = None, policy: Callable[[list[str]], None] = assert_readonly_argv) -> None:
         self.responses = responses or {}
         self.calls: list[list[str]] = []
+        self.policy = policy
 
     def __call__(self, argv: list[str], timeout: float = 5) -> CommandResult:
-        assert_readonly_argv(argv)
+        self.policy(argv)
         self.calls.append(list(argv))
         match = self.responses.get(tuple(argv))
         if match is None:

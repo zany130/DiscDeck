@@ -1,6 +1,6 @@
 # DiscDeck
 
-DiscDeck is a controller-first optical disc manager for Decky Loader on Bazzite and Steam Gaming Mode. This repository currently contains **Phase 0 only**: a read-only diagnostic plugin and the tests that keep unproven hardware from being reported as ready.
+DiscDeck is a controller-first optical disc manager for Decky Loader on Bazzite and Steam Gaming Mode. Phase 1 can read the drive inventory and, only after an explicit request, mount a filesystem read-only or eject through UDisks2. Dump, virtual disc, and game launch are not included. A readable inventory is not hardware validation.
 
 A green CI run packages a development ZIP. It does not mount, eject, dump, load a virtual disc, launch a game, or prove that any of those operations work on hardware.
 

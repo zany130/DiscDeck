@@ -38,6 +38,9 @@ export interface DriveObservation {
   shared_bridge?: boolean;
   optical?: boolean;
   media_present?: boolean | "unknown";
+  generation?: number;
+  media_generation?: number;
+  filesystem?: boolean;
   hardware_validated?: boolean;
   operations?: Record<string, string>;
 }

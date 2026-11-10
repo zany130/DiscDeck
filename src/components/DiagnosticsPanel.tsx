@@ -19,6 +19,10 @@ export function DiagnosticsPanel({
   onRefresh,
   onProbeEvent,
   onVersionPolicy,
+  pendingEjectId,
+  onMount,
+  onUnmount,
+  onEject,
 }: {
   snapshot: DiagnosticSnapshot | null;
   busy: boolean;
@@ -26,6 +30,10 @@ export function DiagnosticsPanel({
   onRefresh: () => void;
   onProbeEvent: () => void;
   onVersionPolicy: () => void;
+  pendingEjectId: string | null;
+  onMount: (driveId: string, generation: number, mediaGeneration: number) => void;
+  onUnmount: (driveId: string, generation: number) => void;
+  onEject: (driveId: string, generation: number) => void;
 }) {
   const identity = snapshot?.identity;
   const redumper = snapshot?.probes?.redumper;
@@ -85,6 +93,15 @@ export function DiagnosticsPanel({
                 {drive.block_node} → {drive.generic_scsi_node ?? "no sg node"} · {drive.vendor} {drive.model} · {drive.scsi_address ?? "no scsi address"}
                 {drive.shared_bridge ? " · shared USB bridge" : ""} · {mediaLabel(drive.media_present)} · operations not run
               </div>
+              <ButtonItem layout="below" onClick={() => onMount(drive.drive_id, drive.generation ?? 1, drive.media_generation ?? 1)} disabled={busy}>
+                Mount read-only
+              </ButtonItem>
+              <ButtonItem layout="below" onClick={() => onUnmount(drive.drive_id, drive.generation ?? 1)} disabled={busy}>
+                Unmount DiscDeck mount
+              </ButtonItem>
+              <ButtonItem layout="below" onClick={() => onEject(drive.drive_id, drive.generation ?? 1)} disabled={busy}>
+                {pendingEjectId === drive.drive_id ? "Confirm eject" : "Eject"}
+              </ButtonItem>
             </PanelSectionRow>
           ))
         )}

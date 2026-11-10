@@ -69,8 +69,6 @@ def module_status(
     details: dict[str, Any] | None = None,
     operation_active: bool = False,
 ) -> dict[str, Any]:
-    if capability == "ready":
-        raise ValueError(FORBIDDEN_READY)
     safe_details = dict(details or {})
     safe_details["hardware_validated"] = False
     effective = effective_state(enabled, capability, operation_active)
@@ -93,8 +91,8 @@ def module_status(
 def effective_state(enabled: bool, capability: str, operation_active: bool) -> str:
     """Apply the capability/policy precedence table.
 
-    ``ready`` is rejected by ``module_status`` in Phase 0. The table still
-    describes the later states so the policy helper can be tested on its own.
+    ``ready`` means the dependency probe allows an attempt. It does not set
+    ``hardware_validated``.
     """
 
     if not enabled and operation_active:
