@@ -105,14 +105,14 @@ Build `c80709b` toasted `physical revision` plus a counter for mount, unmount, a
 
 ## Phase 1 physical actions
 
-Mount, unmount, and confirmed eject are implemented as UDisks2 method calls. Mount uses the read-only option. Eject unmounts the drive first and stops when UDisks2 reports busy or unauthorized. Tray close returns `TRAY_CLOSE_UNSUPPORTED` and does not issue an ioctl. No host mount or eject has been run, so P0-B stays blocked and `hardware_validated` stays false. A readable inventory can make the physical module `ready` / `active`; that means an attempt is allowed, not that hardware acceptance passed.
+Mount, unmount, and confirmed eject are implemented. Mount uses the read-only option. Tray close returns `TRAY_CLOSE_UNSUPPORTED` and does not issue a close command. On 2026-11-10 the gaming PC reported that empty-drive mount and unmount returned `NOT_READY`, and that eject opened the tray as expected. A filesystem mount, an unmount of a DiscDeck mount, an audio disc, and an unplug/replug were not run, so P0-B stays blocked and `hardware_validated` stays false.
 
 ## Gate ledger
 
 | Gate | Status | Why it is not PASS |
 |---|---|---|
 | P0-A Decky runtime | BLOCKED | Identity and probe events 24–26 were observed on build `a634c8e`. Logger files, listener cleanup, and directory durability were not checked |
-| P0-B Physical drives | BLOCKED | Build `a338878` showed the three `sr`/`sg` mappings and UDisks2 reported no media. Insertion, mount, eject, tray close, and unplug were not run |
+| P0-B Physical drives | BLOCKED | Inventory, empty-drive `NOT_READY` mount/unmount, and a successful eject were observed. A data-disc mount, DiscDeck unmount, audio/mixed media, and unplug/replug were not run. Tray close is intentionally unsupported |
 | P0-C Permissions | BLOCKED | ACL fixtures and denial tests exist. Plugin-process SG_IO and polkit were not run |
 | P0-D Redumper | BLOCKED | Build `a338878` found the distrobox wrapper and did not execute it. No disc was dumped |
 | P0-E CDEmu / VHBA | BLOCKED | Presence checks exist. No interface handshake or image load was performed, and the daemon was not started |

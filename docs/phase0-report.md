@@ -72,4 +72,4 @@ Optional later, and only with an explicit decision to run them: `redumper --vers
 
 ## Stop line
 
-Phase 1 adds explicit read-only mount, DiscDeck-owned unmount, and confirmed eject. ISO loops, Redumper jobs, CDEmu loads, and the launcher are not started. Host mount and eject have not been run.
+Phase 1 adds explicit read-only mount, DiscDeck-owned unmount, and confirmed eject. On 2026-11-10, empty drives returned `NOT_READY` and eject opened a tray. A data-disc mount has not been run. ISO loops, Redumper jobs, CDEmu loads, and the launcher are not started.
