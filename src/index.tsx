@@ -1,115 +1,95 @@
-import {
-  ButtonItem,
-  PanelSection,
-  PanelSectionRow,
-  Navigation,
-  staticClasses
-} from "@decky/ui";
-import {
-  addEventListener,
-  removeEventListener,
-  callable,
-  definePlugin,
-  toaster,
-  // routerHook
-} from "@decky/api"
-import { useState } from "react";
-import { FaShip } from "react-icons/fa";
+import { addEventListener, definePlugin, removeEventListener, toaster, useQuickAccessVisible } from "@decky/api";
+import { staticClasses } from "@decky/ui";
+import { useEffect, useState } from "react";
+import { FaCompactDisc } from "react-icons/fa";
+import { emitProbeEvent, getSnapshot, ping, readRedumperVersion } from "./api/bridge";
+import { subscribeChanged } from "./api/events";
+import type { DiagnosticSnapshot } from "./api/types";
+import { DiagnosticsPanel } from "./components/DiagnosticsPanel";
+import { acceptSnapshot } from "./state/snapshotReducer";
 
-// import logo from "../assets/logo.png";
-
-// This function calls the python function "add", which takes in two numbers and returns their sum (as a number)
-// Note the type annotations:
-//  the first one: [first: number, second: number] is for the arguments
-//  the second one: number is for the return value
-const add = callable<[first: number, second: number], number>("add");
-
-// This function calls the python function "start_timer", which takes in no arguments and returns nothing.
-// It starts a (python) timer which eventually emits the event 'timer_event'
-const startTimer = callable<[], void>("start_timer");
+const refreshers = new Set<() => void>();
 
 function Content() {
-  const [result, setResult] = useState<number | undefined>();
+  const [snapshot, setSnapshot] = useState<DiagnosticSnapshot | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const visible = useQuickAccessVisible();
 
-  const onClick = async () => {
-    const result = await add(Math.random(), Math.random());
-    setResult(result);
+  const refresh = () => {
+    setBusy(true);
+    void getSnapshot()
+      .then((response) => {
+        if (!response.ok) {
+          setError(`${response.code}: ${response.message}`);
+          return;
+        }
+        setSnapshot((current) => acceptSnapshot(current, response.result).snapshot);
+        setError(null);
+      })
+      .catch((caught: unknown) => {
+        setError(caught instanceof Error ? caught.message : "The diagnostic call failed.");
+      })
+      .finally(() => {
+        setBusy(false);
+      });
   };
 
+  useEffect(() => {
+    refreshers.add(refresh);
+    void ping().catch(() => undefined);
+    refresh();
+    return () => {
+      refreshers.delete(refresh);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (visible) {
+      refresh();
+    }
+  }, [visible]);
+
   return (
-    <PanelSection title="Panel Section">
-      <PanelSectionRow>
-        <ButtonItem
-          layout="below"
-          onClick={onClick}
-        >
-          {result ?? "Add two numbers via Python"}
-        </ButtonItem>
-      </PanelSectionRow>
-      <PanelSectionRow>
-        <ButtonItem
-          layout="below"
-          onClick={() => startTimer()}
-        >
-          {"Start Python timer"}
-        </ButtonItem>
-      </PanelSectionRow>
-
-      {/* <PanelSectionRow>
-        <div style={{ display: "flex", justifyContent: "center" }}>
-          <img src={logo} />
-        </div>
-      </PanelSectionRow> */}
-
-      {/*<PanelSectionRow>
-        <ButtonItem
-          layout="below"
-          onClick={() => {
-            Navigation.Navigate("/decky-plugin-test");
-            Navigation.CloseSideMenus();
-          }}
-        >
-          Router
-        </ButtonItem>
-      </PanelSectionRow>*/}
-    </PanelSection>
+    <DiagnosticsPanel
+      snapshot={snapshot}
+      busy={busy}
+      error={error}
+      onRefresh={refresh}
+      onProbeEvent={() => {
+        void emitProbeEvent();
+      }}
+      onVersionPolicy={() => {
+        void readRedumperVersion(false).then((response) => {
+          if (!response.ok) {
+            setError(`${response.code}: ${response.message}`);
+            return;
+          }
+          const reason = typeof response.result.reason_code === "string" ? response.result.reason_code : "untested";
+          toaster.toast({ title: "Redumper version policy", body: reason });
+        });
+      }}
+    />
   );
-};
+}
 
 export default definePlugin(() => {
-  console.log("Template plugin initializing, this is called once on frontend startup")
-
-  // serverApi.routerHook.addRoute("/decky-plugin-test", DeckyPluginRouterTest, {
-  //   exact: true,
-  // });
-
-  // Add an event listener to the "timer_event" event from the backend
-  const listener = addEventListener<[
-    test1: string,
-    test2: boolean,
-    test3: number
-  ]>("timer_event", (test1, test2, test3) => {
-    console.log("Template got timer_event with:", test1, test2, test3)
+  const unsubscribe = subscribeChanged(addEventListener, removeEventListener, (notice) => {
     toaster.toast({
-      title: "template got timer_event",
-      body: `${test1}, ${test2}, ${test3}`
+      title: "DiscDeck probe",
+      body: `${notice.domain} revision ${notice.revision}`,
     });
+    refreshers.forEach((refresh) => refresh());
   });
 
   return {
-    // The name shown in various decky menus
-    name: "Test Plugin",
-    // The element displayed at the top of your plugin's menu
-    titleView: <div className={staticClasses.Title}>Decky Example Plugin</div>,
-    // The content of your plugin's menu
+    name: "DiscDeck",
+    titleView: <div className={staticClasses.Title}>DiscDeck</div>,
     content: <Content />,
-    // The icon displayed in the plugin list
-    icon: <FaShip />,
-    // The function triggered when your plugin unloads
+    icon: <FaCompactDisc />,
     onDismount() {
-      console.log("Unloading")
-      removeEventListener("timer_event", listener);
-      // serverApi.routerHook.removeRoute("/decky-plugin-test");
+      unsubscribe();
+      refreshers.clear();
     },
   };
 });
