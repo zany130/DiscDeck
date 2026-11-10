@@ -1,0 +1,102 @@
+# Evidence ledger
+
+Phase 0 records what was read, what was mocked, and what remains unproven. A row is not PASS unless the required observation happened on the target host. None of the P0 gates are PASS.
+
+Labels:
+
+- **Upstream:** the interface was read from a pinned source. That does not mean it was executed on Bazzite.
+- **Host inventory:** a passive observation supplied in the 2026-11-09 host report. It was not repeated by this cloud environment.
+- **Cloud mock:** a unit test with a fixture or scripted command runner.
+- **Untested:** the operation was not performed.
+
+The implementation specification hash is `29d03553468afc61b0e25029ca9ecfc89175682f8151e8fa2b67dc832c0166bb`. It was not modified.
+
+## Pinned sources
+
+| Source | Pin | How it was checked |
+|---|---|---|
+| decky-plugin-template | `90d0780e882a17f5714fc6de044c645f22608290` (2026-04-10) | Local tree matched that commit before DiscDeck edits |
+| Decky Loader | tag `v3.3.1`, commit `ffd103b9c1a4ce5bf305e7c0998eda6e05457dad` | `decky.pyi`, `plugin.py`, and `sandboxed_plugin.py` were read |
+| `@decky/api` | 1.1.3, gitHead `d1b7f16070777a0ada939cbacd3606eeba0574f5` | Public exports listed in `tests/fixtures/decky-api-1.1.3-exports.json` |
+| `@decky/ui` | 4.11.0, gitHead `fd651eb989a723491857af13be1df383d80a4130` | `ButtonItem`, `PanelSection`, `PanelSectionRow`, and `staticClasses` used from public declarations |
+| `@decky/rollup` | 1.0.2 | Frontend build entry |
+| Decky CLI | tag 0.0.8 `src/cli/plugin/build.rs` | ZIP layout copied; CLI binary not run |
+| pnpm | 9.15.9 | Lockfile version 9.0 |
+
+The template `decky.pyi` and loader v3.3.1 `decky.pyi` differ only in the `emit` docstring. The constants and migration helpers match. DiscDeck uses the documented constants and does not import loader-private modules.
+
+## Decky contract checked in source
+
+| Contract | Evidence | Limit |
+|---|---|---|
+| `callable` / method arguments | Loader `execute_method` passes positional `*args` for `api_version` > 0. `plugin.json` keeps `api_version` 1 | Not executed inside Decky |
+| `decky.emit` | Sandbox replaces `emit` and writes a socket event. Frontend `addEventListener` / `removeEventListener` are public exports | Round trip not observed on a Deck |
+| Lifecycle | `_main`, `_unload`, `_uninstall` are optional and awaited. `_migration` runs only if defined | DiscDeck defines no `_migration`, so template example paths are not moved |
+| Directories | Settings, runtime, and logs are `$DECKY_HOME/settings|data|logs/<plugin directory>` | Durability across restarts is untested. No fallback directory was created |
+| Identity | `DECKY_USER` is the installation owner. `USER` / `HOME` follow the effective user. `root` in `flags` selects the effective (usually root) account | DiscDeck's flags are `["debug"]` only. The exact flag `root` is absent |
+| `debug` | Loader reloads a plugin that is already loaded when `debug` is present | Not a privilege flag |
+| Python path | Loader appends `<plugin>/py_modules` | This is why diagnostics live in `py_modules/discdeck` rather than the template's `backend/` tree |
+| File picker, toaster, `useQuickAccessVisible` | Exported by `@decky/api` 1.1.3 | Toaster and visibility are used. The file picker is not used in Phase 0 |
+| Private loader globals | Present in the API package as an internal connection | DiscDeck does not reference them |
+
+`skipLibCheck` is enabled because the pinned `@decky/api` declarations import `react-router` types that are not installed. That is a toolchain gap, not a new API.
+
+## Host inventory (not re-run)
+
+The cloud agent has no access to the gaming PC. These points are copied from the passive host report and redacted. They are not Phase 0 passes.
+
+| Observation | Status |
+|---|---|
+| Bazzite 45.20261104, kernel `7.2.15-ogc1.1.fc45.x86_64`, Secure Boot enabled | Host inventory |
+| Host account UID/GID 1000, not a member of `cdrom` or `disk`; optical access described as named ACLs | Host inventory |
+| PluginLoader file exists; `.loader.version` contains `v3.3.1`; `plugin_loader.service` is `User=root` and was inactive | Host inventory. Service user is not the plugin UID |
+| Three optical nodes at that snapshot: `sr0→sg1` (`13fd:5912`), `sr1→sg2` and `sr2→sg3` sharing JMicron `152d:2338` at LUNs 0 and 1 | Host inventory. Node numbers are ephemeral |
+| `/dev/sg0` existed and was not an optical mapping | Host inventory |
+| Named `user:<host user>:rw-` ACL on the optical nodes and `/dev/vhba_ctl`; `sg0` not accessible | Host inventory. Not an SG_IO test |
+| UDisks2 active; three drives readable; `MediaAvailable=false`; `Optical=false` while sysfs type was 5 | Host inventory. No mount |
+| Redumper on `PATH` is a distrobox-export wrapper into container `arch`, package `redumper 772-1` | Host inventory. `--version` was not run |
+| `cdemu` 3.3.1-1.fc45, VHBA module loaded and signed, user daemon inactive but activatable | Host inventory. Daemon was not started |
+| Native Steam RPM and Proton tool directories present | Host inventory. No shortcut or prefix was read |
+
+Personal home paths and the account name are omitted here. USB identifiers and drive model strings are hardware facts from that snapshot.
+
+## Cloud mocks
+
+| Check | Result here |
+|---|---|
+| Shared-bridge fixture keeps distinct LUNs and ignores unlinked `sg0` | Mock passed |
+| Renaming `sr2` to `sr9` keeps the drive id derived from the sysfs device | Mock passed |
+| `Drive.Optical=false` does not hide an `sr` node | Mock passed |
+| Inactive UDisks2 and inactive CDEmu are not activated | Mock passed |
+| Installed inactive CDEmu is `untested` / `DAEMON_INACTIVE`, not missing and not ready | Mock passed |
+| Distrobox wrapper is identified and not executed | Mock passed |
+| Native `--version` is allowed only as `["redumper", "--version"]` and still leaves the module untested | Mock passed |
+| SG access denial is `SG_ACCESS_DENIED` and does not request root | Mock passed |
+| Missing binary, bus client, or sysfs class is `missing` | Mock passed |
+| Steam discovery does not open `shortcuts.vdf` or a Proton prefix | Mock passed |
+| Invalid settings are not rewritten; launcher and autoplay default off | Mock passed |
+| Unexpected UID 0 drops only to a resolved non-root `DECKY_USER` | Mock passed. Not executed as root |
+| Snapshot capability is never `ready` and `hardware_validated` is false | Mock passed |
+| ZIP layout, absent `root` flag, and publish pointer order | Mock passed |
+
+## Gate ledger
+
+| Gate | Status | Why it is not PASS |
+|---|---|---|
+| P0-A Decky runtime | BLOCKED | Template, loader, and npm contracts were read. Live callable, event cleanup, logger files, owner versus effective UID, and directory durability were not observed inside Decky on Bazzite |
+| P0-B Physical drives | BLOCKED | Fixture covers the shared bridge and renumbered id. Insertion, mount, eject, tray close, and real unplug were not run |
+| P0-C Permissions | BLOCKED | ACL fixtures and denial tests exist. Plugin-process SG_IO and polkit were not run |
+| P0-D Redumper | BLOCKED | Discovery exists. The host wrapper was not executed and no disc was dumped |
+| P0-E CDEmu / VHBA | BLOCKED | Presence checks exist. No interface handshake or image load was performed, and the daemon was not started |
+| P0-F ISO loop | BLOCKED | `LoopSetup` is not called |
+| P0-G Steam / Proton | BLOCKED | Tool directories can be listed. No shortcut launch or prefix inspection was performed |
+| P0-H Recovery | BLOCKED | No Decky reload, backend restart, or interrupted job exists |
+
+## Decisions left inside the written fallback
+
+- No `root` flag and no privileged helper.
+- No automatic `modprobe`, service start, mount, eject, dump, or Steam edit.
+- Runtime durability is reported as `untested`. The specified fallback, a `state/` directory under the settings dir, is not created until a restart test shows it is needed.
+- Redumper version is not read when the file is a distrobox wrapper.
+- CDEmu methods are not called while the daemon is inactive.
+- `Optical=false` does not override sysfs type 5 or an `sr` node name.
