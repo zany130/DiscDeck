@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 from discdeck.commands import CommandResult, ScriptedRunner
 from discdeck.diagnostics import DiagnosticService
-from discdeck.physical import GenerationTracker, eject_argv, mount_argv, unmount_argv
+from discdeck.physical import GenerationTracker, eject_argv, mount_argv, session_argv, unmount_argv
 from discdeck.security import assert_physical_udisks_argv
 from tests.support.fixtures import scripted_bus_responses, write_host_sysfs
 
@@ -137,7 +137,26 @@ class PhysicalOperationTests(unittest.TestCase):
             refused = service.mount_drive(drive["drive_id"], drive["generation"], drive["media_generation"])
             self.assertEqual(refused["code"], "PERMISSION_DENIED")
             self.assertIn("ioctl", refused["message"])
-            self.assertEqual(len(mutation.calls), 1)
+            self.assertIn("did not start", refused["message"])
+            self.assertEqual(mutation.calls, [mount_argv(BLOCK), session_argv(mount_argv(BLOCK))])
+
+    def test_user_session_retry_can_eject_after_a_direct_denial(self) -> None:
+        with TemporaryDirectory() as temporary:
+            direct = eject_argv(DRIVE)
+            session = session_argv(direct)
+            mutation = ScriptedRunner(
+                {
+                    tuple(direct): CommandResult(direct, 1, "", "org.freedesktop.UDisks2.Error.NotAuthorized"),
+                    tuple(session): CommandResult(session, 0, "", ""),
+                },
+                policy=assert_physical_udisks_argv,
+            )
+            service = self._service(Path(temporary), True, mutation)
+            drive = next(item for item in service.snapshot()["drives"] if item["block_node"] == "/dev/sr1")
+            ejected = service.eject_drive(drive["drive_id"], drive["generation"], True)
+            self.assertTrue(ejected["ok"])
+            self.assertEqual(ejected["result"]["via"], "user-session")
+            self.assertEqual(mutation.calls, [direct, session])
 
     def test_generation_follows_the_device_not_the_old_node_name(self) -> None:
         tracker = GenerationTracker()

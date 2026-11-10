@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from discdeck.errors import UnsafeCommand
 from discdeck.models import envelope_error, envelope_ok
 from discdeck.security import assert_physical_udisks_argv
 
@@ -74,12 +75,11 @@ class PhysicalOperations:
             self._release(drive_id)
             return self._error("NOT_READY", "UDisks2 has no block object for this drive.")
         try:
-            result = self.service.mutation_runner(mount_argv(block_path), timeout=20)
+            result, failure, via = self._invoke(mount_argv(block_path), "Mount")
         finally:
             self._release(drive_id)
-        failure = _dbus_failure(result, "Mount")
-        if failure is not None:
-            return self._error(*failure)
+        if failure is not None or result is None:
+            return self._error(*(failure or ("UNSUPPORTED", "Mount did not run.")))
         mount_path = parse_mount_path(result.stdout)
         self.owned_mounts[drive_id] = {"block_path": block_path, "mount_path": mount_path or ""}
         return self._ok(
@@ -89,6 +89,7 @@ class PhysicalOperations:
                 "mount_path": mount_path,
                 "read_only": True,
                 "hardware_validated": False,
+                "via": via,
             }
         )
 
@@ -102,10 +103,9 @@ class PhysicalOperations:
             self._release(drive_id)
             return self._error("NOT_READY", "DiscDeck has no mount record for this drive, so it will not unmount a foreign filesystem.")
         try:
-            result = self.service.mutation_runner(unmount_argv(owned["block_path"]), timeout=20)
+            _result, failure, _via = self._invoke(unmount_argv(owned["block_path"]), "Unmount")
         finally:
             self._release(drive_id)
-        failure = _dbus_failure(result, "Unmount")
         if failure is not None:
             code, message = failure
             return self._error("UNMOUNT_FAILED" if code not in {"PERMISSION_DENIED", "DRIVE_BUSY"} else code, message)
@@ -130,19 +130,17 @@ class PhysicalOperations:
                 block_path = owned["block_path"] if owned is not None else drive.get("udisks_block_path")
                 if not isinstance(block_path, str):
                     return self._error("UNMOUNT_FAILED", "A mount is present, but UDisks2 has no block object to unmount before eject.")
-                unmounted = self.service.mutation_runner(unmount_argv(block_path), timeout=20)
-                failure = _dbus_failure(unmounted, "Unmount")
+                _unmounted, failure, _via = self._invoke(unmount_argv(block_path), "Unmount")
                 if failure is not None:
                     code, message = failure
                     return self._error("UNMOUNT_FAILED" if code not in {"PERMISSION_DENIED", "DRIVE_BUSY"} else code, message)
                 self.owned_mounts.pop(drive_id, None)
-            ejected = self.service.mutation_runner(eject_argv(drive_path), timeout=20)
+            _ejected, failure, via = self._invoke(eject_argv(drive_path), "Eject")
         finally:
             self._release(drive_id)
-        failure = _dbus_failure(ejected, "Eject")
         if failure is not None:
             return self._error(*failure)
-        return self._ok({"action": "eject", "drive_id": drive_id, "hardware_validated": False})
+        return self._ok({"action": "eject", "drive_id": drive_id, "hardware_validated": False, "via": via})
 
     def close_tray(self, drive_id: str) -> dict[str, Any]:
         return self._error("UNSUPPORTED", f"Tray close for {drive_id} is TRAY_CLOSE_UNSUPPORTED. No ioctl was issued.")
@@ -175,6 +173,25 @@ class PhysicalOperations:
     def _release(self, drive_id: str) -> None:
         self.leases.pop(drive_id, None)
 
+    def _invoke(self, argv: list[str], action: str) -> tuple[Any, tuple[str, str] | None, str]:
+        try:
+            result = self.service.mutation_runner(argv, timeout=20)
+        except UnsafeCommand as exc:
+            return None, ("UNSUPPORTED", str(exc)), "direct"
+        failure = _dbus_failure(result, action)
+        if failure is None or failure[0] != "PERMISSION_DENIED":
+            return result, failure, "direct"
+        try:
+            retried = self.service.mutation_runner(session_argv(argv), timeout=25)
+        except UnsafeCommand:
+            return result, failure, "direct"
+        if retried.code == 127:
+            return result, (failure[0], f"{failure[1]} User-session retry did not start."), "direct"
+        retry_failure = _dbus_failure(retried, action)
+        if retry_failure is None:
+            return retried, None, "user-session"
+        return retried, retry_failure, "user-session"
+
     def _ok(self, result: dict[str, Any]) -> dict[str, Any]:
         self.service.revision += 1
         return envelope_ok(result, self.service.revision, self.service.epoch)
@@ -183,11 +200,18 @@ class PhysicalOperations:
         return envelope_error(code, message, retryable=code in {"DRIVE_BUSY", "STALE_DEVICE", "STALE_MEDIA", "NOT_READY"}, revision=self.service.revision, epoch=self.service.epoch)
 
 
+def session_argv(argv: list[str]) -> list[str]:
+    wrapped = ["systemd-run", "--user", "--pipe", "--wait", "--collect", "--quiet", *argv]
+    assert_physical_udisks_argv(wrapped)
+    return wrapped
+
+
 def mount_argv(block_path: str) -> list[str]:
     argv = [
         "busctl",
         "--system",
         "--no-pager",
+        "--allow-interactive-authorization=false",
         "call",
         "org.freedesktop.UDisks2",
         block_path,
@@ -208,6 +232,7 @@ def unmount_argv(block_path: str) -> list[str]:
         "busctl",
         "--system",
         "--no-pager",
+        "--allow-interactive-authorization=false",
         "call",
         "org.freedesktop.UDisks2",
         block_path,
@@ -225,6 +250,7 @@ def eject_argv(drive_path: str) -> list[str]:
         "busctl",
         "--system",
         "--no-pager",
+        "--allow-interactive-authorization=false",
         "call",
         "org.freedesktop.UDisks2",
         drive_path,
@@ -262,8 +288,15 @@ def _dbus_failure(result: Any, action: str) -> tuple[str, str] | None:
         return None
     text = f"{result.stderr}\n{result.stdout}"
     lowered = text.lower()
-    if "notauthorized" in lowered or "not authorized" in lowered or "access denied" in lowered:
-        return ("PERMISSION_DENIED", f"UDisks2 refused {action}. No ioctl fallback was used.")
+    if (
+        "notauthorized" in lowered
+        or "not authorized" in lowered
+        or "access denied" in lowered
+        or "interactiveauthorization" in lowered
+        or "interactive authentication" in lowered
+    ):
+        detail = " ".join(text.split())[:180]
+        return ("PERMISSION_DENIED", f"UDisks2 refused {action}. No ioctl fallback was used. {detail}".strip())
     if "devicebusy" in lowered or "busy" in lowered:
         return ("DRIVE_BUSY", f"UDisks2 reported the drive busy during {action}.")
     detail = " ".join(text.split())[:240]

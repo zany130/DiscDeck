@@ -95,6 +95,10 @@ Observed on the gaming PC after installing build `a634c8e`, with the plugin runn
 
 Build `a338878` was installed from the development URL and refreshed on the same machine. UDisks2 read as `observed`. All three drives reported `no media`, kept the same `sr`/`sg` mapping and shared-bridge lines, and still said operations were not run. Redumper read as `distrobox_wrapper`, version `not_executed`, executed no. CDEmu stayed `DAEMON_INACTIVE` with VHBA loaded, and Steam still listed 21 tool directories without reading shortcuts. The wrapper was not executed.
 
+## Phase 1 action feedback
+
+Build `c80709b` toasted `physical revision` plus a counter for mount, unmount, and eject. That toast came from the change event, and the following refresh cleared the real result, so a refused eject looked like a silent no-op. The next build keeps the UDisks2 code and message on screen. A direct `NotAuthorized` retries the same `Drive.Eject` inside the user session. It still does not use an ioctl, and no host tray has been recorded as opened.
+
 ## Phase 1 physical actions
 
 Mount, unmount, and confirmed eject are implemented as UDisks2 method calls. Mount uses the read-only option. Eject unmounts the drive first and stops when UDisks2 reports busy or unauthorized. Tray close returns `TRAY_CLOSE_UNSUPPORTED` and does not issue an ioctl. No host mount or eject has been run, so P0-B stays blocked and `hardware_validated` stays false. A readable inventory can make the physical module `ready` / `active`; that means an attempt is allowed, not that hardware acceptance passed.

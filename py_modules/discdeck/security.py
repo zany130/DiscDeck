@@ -69,6 +69,15 @@ def assert_readonly_argv(argv: list[str]) -> None:
 
 
 _UDISKS_OBJECT = re.compile(r"^/org/freedesktop/UDisks2/(block_devices|drives)/[A-Za-z0-9_.+-]+$")
+_BUSCTL_HEAD = [
+    "busctl",
+    "--system",
+    "--no-pager",
+    "--allow-interactive-authorization=false",
+    "call",
+    "org.freedesktop.UDisks2",
+]
+_SESSION_HEAD = ["systemd-run", "--user", "--pipe", "--wait", "--collect", "--quiet"]
 
 
 def assert_physical_udisks_argv(argv: list[str]) -> None:
@@ -77,23 +86,25 @@ def assert_physical_udisks_argv(argv: list[str]) -> None:
         raise UnsafeCommand("Command arguments must be non-empty strings.")
     if any("\n" in part or "\x00" in part for part in argv):
         raise UnsafeCommand("Command arguments contain unsupported characters.")
+    if Path(argv[0]).name == "systemd-run":
+        if argv[: len(_SESSION_HEAD)] != _SESSION_HEAD:
+            raise UnsafeCommand("systemd-run is only allowed as a user-session wrapper around one UDisks2 call.")
+        assert_physical_udisks_argv(argv[len(_SESSION_HEAD) :])
+        return
     if Path(argv[0]).name != "busctl":
         raise UnsafeCommand("Physical actions use busctl, not a mount or eject binary.")
     if any(part in {"LoopSetup", "PowerOff", "Rescan", "rw"} for part in argv):
         raise UnsafeCommand("Refusing a UDisks2 method outside the physical manager.")
-    prefix = [
-        "busctl",
-        "--system",
-        "--no-pager",
-        "call",
-        "org.freedesktop.UDisks2",
-    ]
-    if argv[:5] != prefix or len(argv) < 9:
+    head = [Path(argv[0]).name, *argv[1 : len(_BUSCTL_HEAD)]]
+    if head != _BUSCTL_HEAD or len(argv) < len(_BUSCTL_HEAD) + 3:
         raise UnsafeCommand("Physical busctl calls must target the system UDisks2 service.")
-    object_path, interface, method = argv[5], argv[6], argv[7]
+    object_path = argv[len(_BUSCTL_HEAD)]
+    interface = argv[len(_BUSCTL_HEAD) + 1]
+    method = argv[len(_BUSCTL_HEAD) + 2]
+    tail = argv[len(_BUSCTL_HEAD) + 1 :]
     if _UDISKS_OBJECT.match(object_path) is None:
         raise UnsafeCommand("UDisks2 object path is not a block device or drive.")
-    if method == "Mount" and argv[6:] == [
+    if method == "Mount" and tail == [
         "org.freedesktop.UDisks2.Filesystem",
         "Mount",
         "a{sv}",
@@ -103,9 +114,14 @@ def assert_physical_udisks_argv(argv: list[str]) -> None:
         "ro",
     ]:
         return
-    if method == "Unmount" and argv[6:] == ["org.freedesktop.UDisks2.Filesystem", "Unmount", "a{sv}", "0"]:
+    if method == "Unmount" and tail == ["org.freedesktop.UDisks2.Filesystem", "Unmount", "a{sv}", "0"]:
         return
-    if method == "Eject" and interface == "org.freedesktop.UDisks2.Drive" and argv[7:] == ["Eject", "a{sv}", "0"]:
+    if method == "Eject" and interface == "org.freedesktop.UDisks2.Drive" and tail == [
+        "org.freedesktop.UDisks2.Drive",
+        "Eject",
+        "a{sv}",
+        "0",
+    ]:
         return
     raise UnsafeCommand("Refusing a UDisks2 call that is not read-only Mount, Unmount, or Drive.Eject.")
 

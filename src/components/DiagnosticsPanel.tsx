@@ -44,7 +44,7 @@ export function DiagnosticsPanel({
       <PanelSection title="Phase 0 diagnostics">
         <PanelSectionRow>
           <div>
-            Read-only checks only. A successful refresh does not prove mount, eject, dump, virtual-disc, or game-launch behavior.
+            Refresh only reads inventory. Mount, unmount, and eject run when you press those buttons, and the result stays in the message below.
           </div>
         </PanelSectionRow>
         <PanelSectionRow>
@@ -91,7 +91,7 @@ export function DiagnosticsPanel({
             <PanelSectionRow key={drive.drive_id}>
               <div>
                 {drive.block_node} → {drive.generic_scsi_node ?? "no sg node"} · {drive.vendor} {drive.model} · {drive.scsi_address ?? "no scsi address"}
-                {drive.shared_bridge ? " · shared USB bridge" : ""} · {mediaLabel(drive.media_present)} · operations not run
+                {drive.shared_bridge ? " · shared USB bridge" : ""} · {mediaLabel(drive.media_present)} · not hardware-validated
               </div>
               <ButtonItem layout="below" onClick={() => onMount(drive.drive_id, drive.generation ?? 1, drive.media_generation ?? 1)} disabled={busy}>
                 Mount read-only

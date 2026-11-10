@@ -6,6 +6,7 @@ import { ejectDrive, emitProbeEvent, getSnapshot, mountFilesystem, ping, readRed
 import { subscribeChanged } from "./api/events";
 import type { DiagnosticSnapshot } from "./api/types";
 import { DiagnosticsPanel } from "./components/DiagnosticsPanel";
+import { actionNotice } from "./state/actionNotice";
 import { acceptSnapshot } from "./state/snapshotReducer";
 
 const refreshers = new Set<() => void>();
@@ -26,7 +27,6 @@ function Content() {
           return;
         }
         setSnapshot((current) => acceptSnapshot(current, response.result).snapshot);
-        setError(null);
       })
       .catch((caught: unknown) => {
         setError(caught instanceof Error ? caught.message : "The diagnostic call failed.");
@@ -76,15 +76,14 @@ function Content() {
         setBusy(true);
         void mountFilesystem(driveId, generation, mediaGeneration)
           .then((response) => {
-            if (!response.ok) {
-              setError(`${response.code}: ${response.message}`);
-              return;
-            }
-            setError(null);
-            toaster.toast({ title: "DiscDeck mount", body: "Read-only mount was requested." });
+            const notice = actionNotice(response);
+            setError(notice);
+            toaster.toast({ title: "DiscDeck mount", body: notice });
           })
           .catch((caught: unknown) => {
-            setError(caught instanceof Error ? caught.message : "Mount failed.");
+            const notice = caught instanceof Error ? caught.message : "Mount failed.";
+            setError(notice);
+            toaster.toast({ title: "DiscDeck mount", body: notice });
           })
           .finally(() => {
             setBusy(false);
@@ -96,14 +95,14 @@ function Content() {
         setBusy(true);
         void unmountFilesystem(driveId, generation)
           .then((response) => {
-            if (!response.ok) {
-              setError(`${response.code}: ${response.message}`);
-              return;
-            }
-            setError(null);
+            const notice = actionNotice(response);
+            setError(notice);
+            toaster.toast({ title: "DiscDeck unmount", body: notice });
           })
           .catch((caught: unknown) => {
-            setError(caught instanceof Error ? caught.message : "Unmount failed.");
+            const notice = caught instanceof Error ? caught.message : "Unmount failed.";
+            setError(notice);
+            toaster.toast({ title: "DiscDeck unmount", body: notice });
           })
           .finally(() => {
             setBusy(false);
@@ -114,22 +113,23 @@ function Content() {
         const confirmed = pendingEjectId === driveId;
         if (!confirmed) {
           setPendingEjectId(driveId);
-          setError("Press Confirm eject to unmount this drive and eject it. Nothing has been called yet.");
+          const notice = "Press Confirm eject. Nothing has been called yet.";
+          setError(notice);
+          toaster.toast({ title: "DiscDeck eject", body: notice });
           return;
         }
         setPendingEjectId(null);
         setBusy(true);
         void ejectDrive(driveId, generation, true)
           .then((response) => {
-            if (!response.ok) {
-              setError(`${response.code}: ${response.message}`);
-              return;
-            }
-            setError(null);
-            toaster.toast({ title: "DiscDeck eject", body: "UDisks2 eject was requested." });
+            const notice = actionNotice(response);
+            setError(notice);
+            toaster.toast({ title: "DiscDeck eject", body: notice });
           })
           .catch((caught: unknown) => {
-            setError(caught instanceof Error ? caught.message : "Eject failed.");
+            const notice = caught instanceof Error ? caught.message : "Eject failed.";
+            setError(notice);
+            toaster.toast({ title: "DiscDeck eject", body: notice });
           })
           .finally(() => {
             setBusy(false);
@@ -142,10 +142,12 @@ function Content() {
 
 export default definePlugin(() => {
   const unsubscribe = subscribeChanged(addEventListener, removeEventListener, (notice) => {
-    toaster.toast({
-      title: "DiscDeck probe",
-      body: `${notice.domain} revision ${notice.revision}`,
-    });
+    if (notice.domain === "diagnostics") {
+      toaster.toast({
+        title: "DiscDeck probe",
+        body: `revision ${notice.revision}`,
+      });
+    }
     refreshers.forEach((refresh) => refresh());
   });
 
