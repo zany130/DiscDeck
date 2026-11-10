@@ -93,19 +93,19 @@ Observed on the gaming PC after installing build `a634c8e`, with the plugin runn
 | Redumper | `REDUMPER_MISSING` in the Decky process. The wrapper is installed under the user bin, which that process PATH did not include |
 | UDisks2 | Service was active. The reply was `UNSUPPORTED` because this build only accepted the older array-of-pairs JSON |
 
-The follow-up accepts systemd 257 object-map replies and resolves `redumper` from `$DECKY_USER_HOME/.local/bin` or `$HOME/.local/bin` when PATH does not contain it. A wrapper found there is still not executed. Those two changes need another install before they count as host observations.
+Build `a338878` was installed from the development URL and refreshed on the same machine. UDisks2 read as `observed`. All three drives reported `no media`, kept the same `sr`/`sg` mapping and shared-bridge lines, and still said operations were not run. Redumper read as `distrobox_wrapper`, version `not_executed`, executed no. CDEmu stayed `DAEMON_INACTIVE` with VHBA loaded, and Steam still listed 21 tool directories without reading shortcuts. The wrapper was not executed.
 
 ## Gate ledger
 
 | Gate | Status | Why it is not PASS |
 |---|---|---|
-| P0-A Decky runtime | BLOCKED | Template, loader, and npm contracts were read. Live callable, event cleanup, logger files, owner versus effective UID, and directory durability were not observed inside Decky on Bazzite |
-| P0-B Physical drives | BLOCKED | Fixture covers the shared bridge and renumbered id. Insertion, mount, eject, tray close, and real unplug were not run |
+| P0-A Decky runtime | BLOCKED | Identity and probe events 24–26 were observed on build `a634c8e`. Logger files, listener cleanup, and directory durability were not checked |
+| P0-B Physical drives | BLOCKED | Build `a338878` showed the three `sr`/`sg` mappings and UDisks2 reported no media. Insertion, mount, eject, tray close, and unplug were not run |
 | P0-C Permissions | BLOCKED | ACL fixtures and denial tests exist. Plugin-process SG_IO and polkit were not run |
-| P0-D Redumper | BLOCKED | Discovery exists. The host wrapper was not executed and no disc was dumped |
+| P0-D Redumper | BLOCKED | Build `a338878` found the distrobox wrapper and did not execute it. No disc was dumped |
 | P0-E CDEmu / VHBA | BLOCKED | Presence checks exist. No interface handshake or image load was performed, and the daemon was not started |
 | P0-F ISO loop | BLOCKED | `LoopSetup` is not called |
-| P0-G Steam / Proton | BLOCKED | Tool directories can be listed. No shortcut launch or prefix inspection was performed |
+| P0-G Steam / Proton | BLOCKED | The live panel listed 21 tool directories and did not read shortcuts. No launch or prefix inspection was performed |
 | P0-H Recovery | BLOCKED | No Decky reload, backend restart, or interrupted job exists |
 
 ## Decisions left inside the written fallback

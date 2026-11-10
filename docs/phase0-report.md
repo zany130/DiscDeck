@@ -64,7 +64,7 @@ Optional later, and only with an explicit decision to run them: `redumper --vers
 - Live Decky RPC, event delivery, logger files, and directory durability are untested on the machine.
 - The cloud environment cannot see the optical drives, so every hardware line in CI is a mock.
 - `GetManagedObjects` is skipped when UDisks2 is not already active, so a stopped service stays untested instead of being started.
-- Build `a634c8e` rejected the systemd 257 UDisks2 object map and did not search the XDG user bin for Redumper. The follow-up accepts that JSON and resolves the user bin from the owner home. It still does not execute a wrapper. The gaming PC has not rerun that follow-up.
+- Build `a634c8e` rejected the systemd 257 UDisks2 object map and did not search the XDG user bin for Redumper. Build `a338878` was rerun on the gaming PC: UDisks2 read as `observed` with no media, and Redumper read as an unexecuted distrobox wrapper.
 - Tray close, media-change signals, and renumber-after-unplug are not implemented.
 - The GitHub canonical asset replacement has a short window if an upload fails after the previous asset is removed. R2 pointer publication avoids that and is not deployed.
 - The custom hostname is intentionally unset.
