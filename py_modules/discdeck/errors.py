@@ -1,0 +1,16 @@
+"""Structured diagnostic errors."""
+
+from __future__ import annotations
+
+
+class DiscDeckError(Exception):
+    def __init__(self, code: str, message: str, *, retryable: bool = False) -> None:
+        super().__init__(message)
+        self.code = code
+        self.message = message
+        self.retryable = retryable
+
+
+class UnsafeCommand(DiscDeckError):
+    def __init__(self, message: str) -> None:
+        super().__init__("UNSAFE_COMMAND", message, retryable=False)
