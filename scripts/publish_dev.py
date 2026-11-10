@@ -109,31 +109,48 @@ def prepare_work(plan: dict[str, Any], zip_path: Path, work: Path) -> None:
     (work / "metadata.json").write_text(json.dumps(body, indent=2) + "\n", encoding="utf-8")
 
 
+def github_cli_env(base: dict[str, str] | None = None) -> dict[str, str]:
+    """Give gh the Actions token.
+
+    Current GitHub CLI builds refuse to use GITHUB_TOKEN unless GH_TOKEN is set.
+    """
+    env = dict(os.environ if base is None else base)
+    if not env.get("GH_TOKEN") and env.get("GITHUB_TOKEN"):
+        env["GH_TOKEN"] = env["GITHUB_TOKEN"]
+    return env
+
+
 def default_runner(command: list[str]) -> int:
+    env = github_cli_env()
     if command[:3] == ["gh", "release", "view"]:
-        completed = subprocess.run(command, check=False)
-        if completed.returncode != 0:
-            tag = command[3]
-            repo = command[command.index("--repo") + 1]
-            create = subprocess.run(
-                [
-                    "gh",
-                    "release",
-                    "create",
-                    tag,
-                    "--repo",
-                    repo,
-                    "--prerelease",
-                    "--title",
-                    f"DiscDeck {tag}",
-                    "--notes",
-                    "Development or stable DiscDeck ZIP. CI success is not hardware validation.",
-                ],
-                check=False,
-            )
-            return create.returncode
-        return 0
-    completed = subprocess.run(command, check=False)
+        completed = subprocess.run(command, check=False, env=env)
+        # Exit 1 is how gh reports a missing release. Exit 4 is authentication
+        # and must not be turned into a release-create attempt.
+        if completed.returncode == 0:
+            return 0
+        if completed.returncode != 1:
+            return completed.returncode
+        tag = command[3]
+        repo = command[command.index("--repo") + 1]
+        create = subprocess.run(
+            [
+                "gh",
+                "release",
+                "create",
+                tag,
+                "--repo",
+                repo,
+                "--prerelease",
+                "--title",
+                f"DiscDeck {tag}",
+                "--notes",
+                "Development or stable DiscDeck ZIP. CI success is not hardware validation.",
+            ],
+            check=False,
+            env=env,
+        )
+        return create.returncode
+    completed = subprocess.run(command, check=False, env=env)
     return completed.returncode
 
 

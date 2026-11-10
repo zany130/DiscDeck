@@ -60,6 +60,7 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: auto
+          GH_TOKEN: ${{ github.token }}
         run: |
           if [ -n "${R2_ACCESS_KEY_ID:-}" ]; then
             python3 -m pip install --disable-pip-version-check awscli

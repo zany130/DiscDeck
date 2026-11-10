@@ -4,6 +4,8 @@ import unittest
 import zipfile
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from types import SimpleNamespace
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts"))
@@ -88,6 +90,28 @@ class PackagingTests(unittest.TestCase):
             pointer = json.loads((work / "latest.json").read_text(encoding="utf-8"))
             self.assertFalse(pointer["hardware_validated"])
             self.assertTrue(pointer["object_key"].startswith("dev/builds/"))
+
+    def test_actions_token_is_passed_to_gh(self) -> None:
+        import publish_dev
+
+        env = publish_dev.github_cli_env({"GITHUB_TOKEN": "ghs_test", "PATH": "/usr/bin"})
+        self.assertEqual(env["GH_TOKEN"], "ghs_test")
+        explicit = publish_dev.github_cli_env({"GH_TOKEN": "explicit", "GITHUB_TOKEN": "other"})
+        self.assertEqual(explicit["GH_TOKEN"], "explicit")
+
+    def test_missing_release_is_created_and_auth_failure_is_not(self) -> None:
+        import publish_dev
+
+        view = ["gh", "release", "view", "discdeck-dev", "--repo", "zany130/DiscDeck"]
+        with patch("publish_dev.subprocess.run", return_value=SimpleNamespace(returncode=4)) as run:
+            self.assertEqual(publish_dev.default_runner(view), 4)
+            self.assertEqual(run.call_count, 1)
+        with patch(
+            "publish_dev.subprocess.run",
+            side_effect=[SimpleNamespace(returncode=1), SimpleNamespace(returncode=0)],
+        ) as run:
+            self.assertEqual(publish_dev.default_runner(view), 0)
+            self.assertEqual(run.call_args_list[1].args[0][2], "create")
 
     def _minimum(self, source: Path, flags: list[str]) -> None:
         (source / "dist").mkdir(parents=True)
