@@ -2,6 +2,16 @@ import { ButtonItem, PanelSection, PanelSectionRow } from "@decky/ui";
 import type { DiagnosticSnapshot } from "../api/types";
 import { DependencyStatus } from "./DependencyStatus";
 
+function mediaLabel(media: boolean | "unknown" | undefined): string {
+  if (media === true) {
+    return "media present";
+  }
+  if (media === false) {
+    return "no media";
+  }
+  return "media unknown";
+}
+
 export function DiagnosticsPanel({
   snapshot,
   busy,
@@ -73,7 +83,7 @@ export function DiagnosticsPanel({
             <PanelSectionRow key={drive.drive_id}>
               <div>
                 {drive.block_node} → {drive.generic_scsi_node ?? "no sg node"} · {drive.vendor} {drive.model} · {drive.scsi_address ?? "no scsi address"}
-                {drive.shared_bridge ? " · shared USB bridge" : ""} · operations not run
+                {drive.shared_bridge ? " · shared USB bridge" : ""} · {mediaLabel(drive.media_present)} · operations not run
               </div>
             </PanelSectionRow>
           ))

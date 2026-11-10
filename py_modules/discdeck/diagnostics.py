@@ -156,7 +156,9 @@ class DiagnosticService:
         return {"epoch": self.epoch, "revision": self.revision, "domain": "diagnostics"}
 
     def redumper_version_envelope(self, allow_untested_wrapper: bool = False) -> dict[str, Any]:
-        current = discover_redumper(self.environ, None)
+        settings_state = load_settings(_settings_path(self.environ))
+        configured = settings_state["settings"].get("redumper_binary")
+        current = discover_redumper(self.environ, configured if isinstance(configured, str) else None)
         path = current.get("path")
         if not path:
             self.revision += 1

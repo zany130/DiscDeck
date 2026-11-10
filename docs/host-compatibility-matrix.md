@@ -12,10 +12,10 @@ This table separates the 2026-11-09 passive inventory from operations Phase 0 ha
 | Plugin directories | Not measured | Reports existence and writability. Durability is `untested` | P0-A BLOCKED |
 | Optical nodes | `sr0→sg1` on USB `13fd:5912`; `sr1→sg2` LUN 0 and `sr2→sg3` LUN 1 on shared JMicron `152d:2338` | Maps `scsi_generic` links. Ignores unrelated `sg0`. Identity follows the sysfs device, not the `sr` number | P0-B BLOCKED |
 | Media | Snapshot had no media. `MediaAvailable=false`. `Optical=false` did not match sysfs type 5 | Keeps those drives optical. Does not mount, eject, or close the tray | P0-B BLOCKED |
-| UDisks2 | Service active and readable by the host user | Read-only `GetManagedObjects` only when the bus name already has a PID. Does not activate a stopped service | P0-B / P0-F BLOCKED |
+| UDisks2 | Service active and readable by the host user. Build `a634c8e` reported `UNSUPPORTED` for the systemd 257 object-map reply | Read-only `GetManagedObjects` only when the bus name already has a PID. Accepts pair and object JSON. Does not activate a stopped service | P0-B / P0-F BLOCKED |
 | Permissions | Named user ACL `rw-` on optical nodes and `vhba_ctl`. `sg0` denied to the host user | Reports this process's `access` and named ACL. A denial stays on the dump module | P0-C BLOCKED |
 | SG_IO | Not performed | Not performed | P0-C BLOCKED |
-| Redumper | Wrapper on the user `PATH`; container package `772-1`; binary not launched | Records path, size, and hash. Does not execute a wrapper. Does not run `disc` | P0-D BLOCKED |
+| Redumper | Wrapper in the user bin; container package `772-1`; binary not launched. Build `a634c8e` reported `REDUMPER_MISSING` because Decky's PATH omitted that directory | Searches PATH, then `$DECKY_USER_HOME/.local/bin` or `$HOME/.local/bin`, then an absolute configured path. Does not execute a wrapper. Does not run `disc` | P0-D BLOCKED |
 | VHBA | Module loaded, version `20260313`, signed, control node ACL present | Checks `/sys/module/vhba` and the control node. Does not `modprobe` | P0-E BLOCKED |
 | CDEmu | Client and daemon 3.3.1 installed. User service inactive and activatable. Bus name had no owner | Reports `DAEMON_INACTIVE`. Does not call `cdemu status` or load an image | P0-E BLOCKED |
 | ISO loop | Not tested. UDisks2 was present | Does not call `LoopSetup` | P0-F BLOCKED |

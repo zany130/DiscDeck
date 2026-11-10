@@ -48,6 +48,24 @@ class CapabilityPolicyTests(unittest.TestCase):
             self.assertEqual(path.read_bytes(), before)
             self.assertFalse(loaded["rewritten"])
 
+    def test_absolute_redumper_path_is_kept_and_file_is_unchanged(self) -> None:
+        with TemporaryDirectory() as temporary:
+            path = Path(temporary) / "settings.json"
+            path.write_text(
+                '{"schema_version":1,"settings_revision":2,"redumper_binary":"/opt/redumper","modules":{}}',
+                encoding="utf-8",
+            )
+            before = path.read_bytes()
+            loaded = load_settings(path)
+            self.assertEqual(loaded["settings"]["redumper_binary"], "/opt/redumper")
+            self.assertFalse(loaded["settings"]["modules"]["launch.autoplay"])
+            self.assertEqual(path.read_bytes(), before)
+            path.write_text(
+                '{"schema_version":1,"settings_revision":2,"redumper_binary":"redumper"}',
+                encoding="utf-8",
+            )
+            self.assertIsNone(load_settings(path)["settings"]["redumper_binary"])
+
     def test_absent_settings_are_not_created(self) -> None:
         with TemporaryDirectory() as temporary:
             path = Path(temporary) / "settings.json"

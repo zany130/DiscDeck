@@ -72,6 +72,81 @@ class UDisksTests(unittest.TestCase):
         objects = normalize_managed_objects(json.loads(udisks_busctl_payload()))
         self.assertIn("/org/freedesktop/UDisks2/drives/bridge_lun0", objects)
 
+    def test_systemd_257_object_map_is_read_without_mounting(self) -> None:
+        payload = json.dumps(
+            {
+                "type": "(a{oa{sa{sv}}})",
+                "data": [
+                    {
+                        "/org/freedesktop/UDisks2/block_devices/sr0": {
+                            "org.freedesktop.UDisks2.Block": {
+                                "Device": {"type": "ay", "data": [ord(char) for char in "/dev/sr0"] + [0]},
+                                "Drive": {"type": "o", "data": "/org/freedesktop/UDisks2/drives/generic"},
+                                "Size": {"type": "t", "data": 0},
+                            }
+                        },
+                        "/org/freedesktop/UDisks2/block_devices/sr1": {
+                            "org.freedesktop.UDisks2.Block": {
+                                "Device": {"type": "ay", "data": [ord(char) for char in "/dev/sr1"] + [0]},
+                                "Drive": {"type": "o", "data": "/org/freedesktop/UDisks2/drives/bridge_lun0"},
+                            }
+                        },
+                        "/org/freedesktop/UDisks2/block_devices/sr2": {
+                            "org.freedesktop.UDisks2.Block": {
+                                "Device": {"type": "ay", "data": [ord(char) for char in "/dev/sr2"] + [0]},
+                                "Drive": {"type": "o", "data": "/org/freedesktop/UDisks2/drives/bridge_lun1"},
+                            }
+                        },
+                        "/org/freedesktop/UDisks2/drives/bridge_lun0": {
+                            "org.freedesktop.UDisks2.Drive": {
+                                "Optical": {"type": "b", "data": False},
+                                "MediaAvailable": {"type": "b", "data": False},
+                                "ConnectionBus": {"type": "s", "data": "usb"},
+                            }
+                        },
+                        "/org/freedesktop/UDisks2/drives/bridge_lun1": {
+                            "org.freedesktop.UDisks2.Drive": {
+                                "Optical": {"type": "b", "data": False},
+                                "MediaAvailable": {"type": "b", "data": True},
+                            }
+                        },
+                        "/org/freedesktop/UDisks2/drives/generic": {
+                            "org.freedesktop.UDisks2.Drive": {
+                                "Optical": {"type": "b", "data": False},
+                                "MediaAvailable": {"type": "b", "data": False},
+                            }
+                        },
+                    }
+                ],
+            }
+        )
+        found = probe_udisks(
+            ScriptedRunner(
+                {
+                    ("busctl", "--system", "--no-pager", "list"): CommandResult(["busctl"], 0, "org.freedesktop.UDisks2 4242 udisksd root\n", ""),
+                    (
+                        "busctl",
+                        "--system",
+                        "--json=short",
+                        "call",
+                        "org.freedesktop.UDisks2",
+                        "/org/freedesktop/UDisks2",
+                        "org.freedesktop.DBus.ObjectManager",
+                        "GetManagedObjects",
+                    ): CommandResult(["busctl"], 0, payload, ""),
+                }
+            )
+        )
+        self.assertEqual(found["status"], "observed")
+        self.assertEqual(found["reason_code"], None)
+        by_device = {item["device"]: item for item in found["drives"]}
+        self.assertEqual(set(by_device), {"/dev/sr0", "/dev/sr1", "/dev/sr2"})
+        self.assertFalse(by_device["/dev/sr1"]["media_available"])
+        self.assertTrue(by_device["/dev/sr2"]["media_available"])
+        self.assertFalse(by_device["/dev/sr1"]["udisks_optical_property"])
+        self.assertTrue(all(state == "not_run" for item in found["drives"] for state in item["operations"].values()))
+        self.assertEqual(len(found["drives"]), 3)
+
 
 if __name__ == "__main__":
     unittest.main()

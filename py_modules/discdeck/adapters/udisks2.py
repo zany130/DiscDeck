@@ -64,15 +64,16 @@ def probe_udisks(runner: CommandRunner | Any, injected: dict[str, Any] | None = 
 
 
 def normalize_managed_objects(payload: Any) -> dict[str, dict[str, dict[str, Any]]]:
-    if isinstance(payload, dict) and isinstance(payload.get("data"), list) and str(payload.get("type", "")).startswith("a{oa{sa{sv}}}"):
-        return _from_busctl(payload["data"])
+    """Accept both busctl JSON shapes.
+
+    Older busctl builds emit D-Bus dictionaries as arrays of pairs. systemd 257,
+    which Bazzite 45 ships, emits them as JSON objects and wraps a method reply
+    in a one-element list. Both are read-only object maps.
+    """
+    if isinstance(payload, dict) and "type" in payload and "data" in payload:
+        return _from_envelope(payload["data"])
     if isinstance(payload, dict):
-        normalized: dict[str, dict[str, dict[str, Any]]] = {}
-        for path, interfaces in payload.items():
-            if not isinstance(interfaces, dict):
-                continue
-            normalized[str(path)] = {name: props for name, props in interfaces.items() if isinstance(props, dict)}
-        return normalized
+        return _from_object_map(payload)
     raise ValueError("Unrecognized UDisks2 payload.")
 
 
@@ -142,15 +143,51 @@ def _summarize(objects: dict[str, dict[str, dict[str, Any]]], *, activated: bool
     }
 
 
+def _from_envelope(data: Any) -> dict[str, dict[str, dict[str, Any]]]:
+    if isinstance(data, dict):
+        return _from_object_map(data)
+    if isinstance(data, list) and data and all(isinstance(item, dict) for item in data):
+        merged: dict[str, Any] = {}
+        for item in data:
+            merged.update(item)
+        return _from_object_map(merged)
+    if isinstance(data, list):
+        return _from_busctl(data)
+    raise ValueError("Unrecognized UDisks2 payload.")
+
+
+def _from_object_map(objects: dict[Any, Any]) -> dict[str, dict[str, dict[str, Any]]]:
+    normalized: dict[str, dict[str, dict[str, Any]]] = {}
+    for path, interfaces in objects.items():
+        if not isinstance(interfaces, dict):
+            continue
+        parsed: dict[str, dict[str, Any]] = {}
+        for name, properties in interfaces.items():
+            if isinstance(properties, dict):
+                parsed[str(name)] = {str(key): _unwrap(value) for key, value in properties.items()}
+            elif isinstance(properties, list):
+                parsed[str(name)] = _pairs(properties)
+        normalized[str(path)] = parsed
+    return normalized
+
+
 def _from_busctl(data: list[Any]) -> dict[str, dict[str, dict[str, Any]]]:
     objects: dict[str, dict[str, dict[str, Any]]] = {}
     for entry in data:
         path, interfaces = entry
         parsed_interfaces: dict[str, dict[str, Any]] = {}
         for interface_name, properties in interfaces:
-            parsed_interfaces[interface_name] = {name: _unwrap(value) for name, value in properties}
-        objects[path] = parsed_interfaces
+            parsed_interfaces[str(interface_name)] = _pairs(properties)
+        objects[str(path)] = parsed_interfaces
     return objects
+
+
+def _pairs(properties: list[Any]) -> dict[str, Any]:
+    parsed: dict[str, Any] = {}
+    for item in properties:
+        if isinstance(item, (list, tuple)) and len(item) == 2:
+            parsed[str(item[0])] = _unwrap(item[1])
+    return parsed
 
 
 def _unwrap(value: Any) -> Any:

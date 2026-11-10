@@ -38,6 +38,20 @@ class RedumperTests(unittest.TestCase):
         self.assertEqual(found["reason_code"], "REDUMPER_MISSING")
         self.assertFalse(found["executed"])
 
+    def test_user_bin_is_found_when_decky_path_omits_it(self) -> None:
+        with TemporaryDirectory() as temporary:
+            home = Path(temporary) / "home" / "hostuser"
+            path = write_redumper_wrapper(home / ".local" / "bin")
+            found = discover({"PATH": "/usr/bin", "DECKY_USER_HOME": str(home)})
+            self.assertEqual(found["path"], str(path))
+            self.assertEqual(found["launch_kind"], "distrobox_wrapper")
+            self.assertEqual(found["reason_code"], "REDUMPER_VERSION_NOT_EXECUTED")
+            self.assertFalse(found["executed"])
+            runner = ScriptedRunner()
+            version = read_version(found["path"], runner, allow_untested_wrapper=False)
+            self.assertEqual(version["reason_code"], "DISTROBOX_WRAPPER_NOT_EXECUTED")
+            self.assertEqual(runner.calls, [])
+
     def test_disc_command_is_refused(self) -> None:
         with self.assertRaises(UnsafeCommand):
             assert_readonly_argv(["redumper", "disc", "--drive=/dev/sg1"])

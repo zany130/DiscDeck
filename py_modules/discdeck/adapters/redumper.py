@@ -107,6 +107,19 @@ def _resolve(environ: dict[str, str], configured_path: str | None) -> Path | Non
         candidate = Path(directory) / "redumper"
         if candidate.is_file():
             return candidate
+    # Decky does not inherit a login-shell PATH. The XDG user bin is the
+    # location a per-user install uses, resolved from the owner home.
+    seen: set[Path] = set()
+    for key in ("DECKY_USER_HOME", "HOME"):
+        raw = environ.get(key)
+        if not raw:
+            continue
+        candidate = Path(raw) / ".local" / "bin" / "redumper"
+        if candidate in seen:
+            continue
+        seen.add(candidate)
+        if candidate.is_file():
+            return candidate
     return None
 
 

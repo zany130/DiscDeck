@@ -79,6 +79,22 @@ Personal home paths and the account name are omitted here. USB identifiers and d
 | Snapshot capability is never `ready` and `hardware_validated` is false | Mock passed |
 | ZIP layout, absent `root` flag, and publish pointer order | Mock passed |
 
+## Live Decky session
+
+Observed on the gaming PC after installing build `a634c8e`, with the plugin running inside Decky Loader v3.3.1. Personal home paths are omitted. This is a host observation. It does not move a gate to PASS.
+
+| Check | Observation |
+|---|---|
+| Identity | Effective user matched the owner. UID 1000, GID 1000. Root flag no. Loader `v3.3.1`. Hardware validated no |
+| Events | Probe toasts reported revisions 24, then 25, then 26 |
+| Drives | `sr0→sg1` Generic External SCSI `6:0:0:0`; `sr1→sg2` TSSTcorp SH-D163B SCSI `7:0:0:0` shared bridge; `sr2→sg3` PLEXTOR PX-W4012A SCSI `7:0:0:1` shared bridge. Operations not run. `sg0` was not listed |
+| CDEmu | `DAEMON_INACTIVE`, active no, VHBA loaded yes |
+| Steam | `untested`, 21 tool directories, shortcuts read no |
+| Redumper | `REDUMPER_MISSING` in the Decky process. The wrapper is installed under the user bin, which that process PATH did not include |
+| UDisks2 | Service was active. The reply was `UNSUPPORTED` because this build only accepted the older array-of-pairs JSON |
+
+The follow-up accepts systemd 257 object-map replies and resolves `redumper` from `$DECKY_USER_HOME/.local/bin` or `$HOME/.local/bin` when PATH does not contain it. A wrapper found there is still not executed. Those two changes need another install before they count as host observations.
+
 ## Gate ledger
 
 | Gate | Status | Why it is not PASS |
