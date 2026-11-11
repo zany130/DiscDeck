@@ -1,0 +1,75 @@
+name: Publish stable
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: Type replace-stable-discdeck to replace the stable URL
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  publish-stable:
+    name: Publish stable ZIP
+    if: vars.DISCDECK_STABLE_PUBLISH_ENABLED == 'true' && inputs.confirmation == 'replace-stable-discdeck'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.9
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install, test, and package
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm run typecheck
+          pnpm run lint
+          pnpm test
+          PYTHONPATH=py_modules:. python3 -m unittest discover -s tests -t .
+          pnpm run build
+          python3 scripts/package_plugin.py --output out
+          python3 scripts/verify_zip.py out/DiscDeck-phase0-dev-*.zip
+
+      - name: Publish stable channel
+        env:
+          DISCDECK_PUBLISH_MODE: ${{ vars.DISCDECK_PUBLISH_MODE }}
+          DISCDECK_REPO_PUBLIC: ${{ github.event.repository.visibility == 'public' }}
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ -n "${R2_ACCESS_KEY_ID:-}" ]; then
+            python3 -m pip install --disable-pip-version-check awscli
+          fi
+          python3 scripts/publish_dev.py --zip out/DiscDeck-phase0-dev-*.zip --channel stable --commit "$GITHUB_SHA"
+
+      - name: Upload stable artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: DiscDeck-stable-${{ github.sha }}
+          path: out/DiscDeck-phase0-dev-*.zip
+          if-no-files-found: error

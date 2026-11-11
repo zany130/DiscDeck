@@ -1,57 +1,81 @@
 import os
+import pwd
 
-# The decky plugin module is located at decky-loader/plugin
-# For easy intellisense checkout the decky-loader code repo
-# and add the `decky-loader/plugin/imports` path to `python.analysis.extraPaths` in `.vscode/settings.json`
 import decky
-import asyncio
+
+from discdeck.diagnostics import DiagnosticService
+from discdeck.lifecycle import Lifecycle
+from discdeck.models import envelope_error, envelope_ok
+
 
 class Plugin:
-    # A normal method. It can be called from the TypeScript side using @decky/api.
-    async def add(self, left: int, right: int) -> int:
-        return left + right
+    """Decky lifecycle, diagnostics, and explicit physical actions.
 
-    async def long_running(self):
-        await asyncio.sleep(15)
-        # Passing through a bunch of random data, just as an example
-        await decky.emit("timer_event", "Hello from the backend!", True, 2)
+    Mount is read-only. Eject requires confirmation. Tray close, dumping,
+    virtual images, and game launch are not implemented.
+    """
 
-    # Asyncio-compatible long-running code, executed in a task when the plugin is loaded
-    async def _main(self):
-        self.loop = asyncio.get_event_loop()
-        decky.logger.info("Hello World!")
+    def __init__(self) -> None:
+        self.lifecycle = Lifecycle()
+        self.service = DiagnosticService(environ=dict(os.environ), os_module=os, pwd_module=pwd)
+        self.service.log = lambda message: decky.logger.info("%s", message)
 
-    # Function called first during the unload process, utilize this to handle your plugin being stopped, but not
-    # completely removed
-    async def _unload(self):
-        decky.logger.info("Goodnight World!")
-        pass
+    async def _main(self) -> None:
+        await self.lifecycle.main()
+        self.service.lifecycle_phase = self.lifecycle.phase
+        decky.logger.info(
+            "DiscDeck phase 1 loaded (effective uid %s). No disc operation was started.",
+            os.geteuid(),
+        )
 
-    # Function called after `_unload` during uninstall, utilize this to clean up processes and other remnants of your
-    # plugin that may remain on the system
-    async def _uninstall(self):
-        decky.logger.info("Goodbye World!")
-        pass
+    async def _unload(self) -> None:
+        await self.lifecycle.unload()
+        self.service.lifecycle_phase = self.lifecycle.phase
+        decky.logger.info("DiscDeck unloaded without ejecting media or stopping foreign processes.")
 
-    async def start_timer(self):
-        self.loop.create_task(self.long_running())
+    async def _uninstall(self) -> None:
+        await self.lifecycle.uninstall()
+        self.service.lifecycle_phase = self.lifecycle.phase
+        decky.logger.info("DiscDeck uninstalled. User data, mounts, shortcuts, and prefixes were left in place.")
 
-    # Migrations that should be performed before entering `_main()`.
-    async def _migration(self):
-        decky.logger.info("Migrating")
-        # Here's a migration example for logs:
-        # - `~/.config/decky-template/template.log` will be migrated to `decky.decky_LOG_DIR/template.log`
-        decky.migrate_logs(os.path.join(decky.DECKY_USER_HOME,
-                                               ".config", "decky-template", "template.log"))
-        # Here's a migration example for settings:
-        # - `~/homebrew/settings/template.json` is migrated to `decky.decky_SETTINGS_DIR/template.json`
-        # - `~/.config/decky-template/` all files and directories under this root are migrated to `decky.decky_SETTINGS_DIR/`
-        decky.migrate_settings(
-            os.path.join(decky.DECKY_HOME, "settings", "template.json"),
-            os.path.join(decky.DECKY_USER_HOME, ".config", "decky-template"))
-        # Here's a migration example for runtime data:
-        # - `~/homebrew/template/` all files and directories under this root are migrated to `decky.decky_RUNTIME_DIR/`
-        # - `~/.local/share/decky-template/` all files and directories under this root are migrated to `decky.decky_RUNTIME_DIR/`
-        decky.migrate_runtime(
-            os.path.join(decky.DECKY_HOME, "template"),
-            os.path.join(decky.DECKY_USER_HOME, ".local", "share", "decky-template"))
+    async def get_snapshot(self) -> dict:
+        return self.service.snapshot_envelope()
+
+    async def get_diagnostics(self, module_id: str | None = None) -> dict:
+        return self.service.diagnostics_envelope(module_id)
+
+    async def probe_module(self, module_id: str) -> dict:
+        if not isinstance(module_id, str) or not module_id:
+            return envelope_error("UNSUPPORTED", "module_id is required.", retryable=False, epoch=self.service.epoch)
+        return self.service.probe_envelope(module_id)
+
+    async def ping(self) -> dict:
+        self.service.revision += 1
+        return envelope_ok(
+            {"pong": True, "phase": "1", "hardware_validated": False},
+            self.service.revision,
+            self.service.epoch,
+        )
+
+    async def emit_probe_event(self) -> dict:
+        payload = self.service.probe_event()
+        await decky.emit("discdeck:changed", payload)
+        return envelope_ok(payload, payload["revision"], payload["epoch"])
+
+    async def read_redumper_version(self, allow_untested_wrapper: bool = False) -> dict:
+        return self.service.redumper_version_envelope(bool(allow_untested_wrapper))
+
+    async def mount_filesystem(self, drive_id: str, generation: int, media_generation: int) -> dict:
+        result = self.service.mount_drive(drive_id, int(generation), int(media_generation))
+        await decky.emit("discdeck:changed", {"epoch": self.service.epoch, "revision": self.service.revision, "domain": "physical", "id": drive_id})
+        return result
+
+    async def unmount_filesystem(self, drive_id: str, generation: int) -> dict:
+        result = self.service.unmount_drive(drive_id, int(generation))
+        await decky.emit("discdeck:changed", {"epoch": self.service.epoch, "revision": self.service.revision, "domain": "physical", "id": drive_id})
+        return result
+
+    async def eject_drive(self, drive_id: str, generation: int, confirmed: bool = False) -> dict:
+        result = self.service.eject_drive(drive_id, int(generation), bool(confirmed))
+        await decky.emit("discdeck:changed", {"epoch": self.service.epoch, "revision": self.service.revision, "domain": "physical", "id": drive_id})
+        return result

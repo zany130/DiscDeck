@@ -1,11 +1,11 @@
 {
-  "name": "Example Plugin",
-  "author": "John Doe",
-  "flags": ["debug", "_root"],
+  "name": "DiscDeck",
+  "author": "zany130",
+  "flags": ["debug"],
   "api_version": 1,
   "publish": {
-    "tags": ["template", "root"],
-    "description": "Decky example plugin.",
-    "image": "https://opengraph.githubassets.com/1/SteamDeckHomebrew/PluginLoader"
+    "tags": ["diagnostics", "optical"],
+    "description": "DiscDeck physical manager. Inventory can be read, and mount or eject runs only when requested. CI success is not hardware validation.",
+    "image": "https://opengraph.githubassets.com/1/zany130/DiscDeck"
   }
 }

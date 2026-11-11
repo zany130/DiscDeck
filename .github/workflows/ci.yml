@@ -1,0 +1,130 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - cursor/phase0-foundation-beb3
+
+permissions:
+  contents: read
+
+concurrency:
+  group: discdeck-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Validate and package
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.9
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install pinned JavaScript dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm run typecheck
+
+      - name: Lint
+        run: pnpm run lint
+
+      - name: Frontend tests
+        run: pnpm test
+
+      - name: Python syntax and unit tests
+        run: |
+          PYTHONPATH=py_modules:. python3 -m compileall -q main.py py_modules scripts
+          PYTHONPATH=py_modules:. python3 -m unittest discover -s tests -t .
+
+      - name: Distribution worker tests
+        run: node --test distribution/worker.test.mjs
+
+      - name: Build frontend
+        run: pnpm run build
+
+      - name: Package Decky ZIP
+        run: python3 scripts/package_plugin.py --output out
+
+      - name: Verify ZIP layout
+        run: python3 scripts/verify_zip.py out/DiscDeck-phase0-dev-*.zip
+
+      - name: Upload development ZIP artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: DiscDeck-phase0-dev-${{ github.sha }}
+          path: out/DiscDeck-phase0-dev-*.zip
+          if-no-files-found: error
+          retention-days: 14
+
+  publish-development:
+    name: Publish development ZIP
+    needs: validate
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Download verified ZIP
+        uses: actions/download-artifact@v4
+        with:
+          name: DiscDeck-phase0-dev-${{ github.sha }}
+          path: out
+
+      - name: Decide whether this branch publishes
+        id: gate
+        env:
+          ALLOW: ${{ vars.DISCDECK_PUBLISH_BRANCHES }}
+        run: |
+          branches="${ALLOW:-main,cursor/phase0-foundation-beb3}"
+          case ",${branches}," in
+            *",${GITHUB_REF_NAME}",*) echo "publish=true" >> "$GITHUB_OUTPUT" ;;
+            *) echo "publish=false" >> "$GITHUB_OUTPUT" ;;
+          esac
+          echo "Branch ${GITHUB_REF_NAME}; allowlist ${branches}"
+
+      - name: Publish
+        if: steps.gate.outputs.publish == 'true'
+        env:
+          DISCDECK_PUBLISH_MODE: ${{ vars.DISCDECK_PUBLISH_MODE }}
+          DISCDECK_REPO_PUBLIC: ${{ github.event.repository.visibility == 'public' }}
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_SHA: ${{ github.sha }}
+        run: |
+          if [ -n "${R2_ACCESS_KEY_ID:-}" ]; then
+            python3 -m pip install --disable-pip-version-check awscli
+          fi
+          python3 scripts/publish_dev.py --zip out/DiscDeck-phase0-dev-*.zip --channel development --commit "$GITHUB_SHA"

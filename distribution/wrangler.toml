@@ -1,0 +1,11 @@
+name = "discdeck-distribution"
+main = "worker.mjs"
+compatibility_date = "2024-11-01"
+
+# Deploy only after the bucket and domain are confirmed. No route is set here.
+# A workers.dev or custom-domain route is added during the setup in
+# docs/distribution.md. Do not guess a public hostname in this file.
+
+[[r2_buckets]]
+binding = "BUCKET"
+bucket_name = "discdeck-artifacts"

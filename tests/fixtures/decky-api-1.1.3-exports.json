@@ -1,0 +1,21 @@
+{
+  "package": "@decky/api",
+  "version": "1.1.3",
+  "gitHead": "d1b7f16070777a0ada939cbacd3606eeba0574f5",
+  "exports": [
+    "call",
+    "callable",
+    "addEventListener",
+    "removeEventListener",
+    "routerHook",
+    "toaster",
+    "openFilePicker",
+    "executeInTab",
+    "injectCssIntoTab",
+    "removeCssFromTab",
+    "fetchNoCors",
+    "getExternalResourceURL",
+    "useQuickAccessVisible",
+    "definePlugin"
+  ]
+}
