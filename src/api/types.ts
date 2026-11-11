@@ -74,6 +74,7 @@ export interface DiagnosticSnapshot {
     root_requested?: boolean;
     loader_version?: string | null;
     plugin_version?: string | null;
+    home?: string | null;
     privilege?: { status?: string; dropped?: boolean };
     directories?: Record<string, { path?: string | null; exists?: boolean; writable?: boolean; durability?: string }>;
   };

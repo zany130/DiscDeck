@@ -7,11 +7,10 @@ import { subscribeChanged } from "./api/events";
 import type { DiagnosticSnapshot } from "./api/types";
 import { DiagnosticsPanel } from "./components/DiagnosticsPanel";
 import { actionNotice } from "./state/actionNotice";
+import { chosenIsoPath, isoPickerRequest } from "./state/isoPicker";
 import { acceptSnapshot } from "./state/snapshotReducer";
 
 const refreshers = new Set<() => void>();
-/** FileSelectionType.FILE from @decky/api. The published package does not export the enum value. */
-const PICK_FILE = 0;
 
 function Content() {
   const [snapshot, setSnapshot] = useState<DiagnosticSnapshot | null>(null);
@@ -141,12 +140,23 @@ function Content() {
       onPickIso={() => {
         setPendingEjectId(null);
         setBusy(true);
-        void openFilePicker(PICK_FILE, "/", true, false, undefined, ["iso"], false, false, 1)
+        const request = isoPickerRequest(snapshot?.identity.home);
+        void openFilePicker(
+          request.select,
+          request.startPath,
+          request.includeFiles,
+          request.includeFolders,
+          undefined,
+          [...request.extensions],
+          request.showHiddenFiles,
+          request.allowAllFiles,
+        )
           .then((picked) => {
-            if (!picked || picked.path.length === 0) {
+            const path = chosenIsoPath(picked);
+            if (!path) {
               return;
             }
-            return mountIso(picked.path).then((response) => {
+            return mountIso(path).then((response) => {
               const notice = actionNotice(response);
               setError(notice);
               toaster.toast({ title: "DiscDeck ISO", body: notice });

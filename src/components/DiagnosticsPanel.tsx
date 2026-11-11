@@ -112,7 +112,9 @@ export function DiagnosticsPanel({
       </PanelSection>
       <PanelSection title="Filesystem images">
         <PanelSectionRow>
-          <div>A filesystem image is a read-only file mount. It is not a virtual disc and it does not use CDEmu.</div>
+          <div>
+            A filesystem image is a read-only file mount. It is not a virtual disc and it does not use CDEmu. The picker lists folders. Open one and choose the .iso file.
+          </div>
         </PanelSectionRow>
         <PanelSectionRow>
           <ButtonItem layout="below" onClick={onPickIso} disabled={busy}>
