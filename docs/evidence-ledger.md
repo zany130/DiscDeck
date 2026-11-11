@@ -111,7 +111,9 @@ Mount, unmount, and confirmed eject are implemented. Mount uses the read-only op
 
 A picked `.iso` can be sent to UDisks2 `LoopSetup` with `read-only` true, then mounted read-only. The ownership journal records that loop only. Unmount and delete run only when the live backing file still matches the record. A symlink in the path is rejected. CDEmu is not called, and the image is not labeled as a virtual drive. `hardware_validated` stays false.
 
-On 2026-11-10 at about 8:20 PM ET the gaming PC, running version 0.2.0 build `b974666`, reported that an ISO could be selected in the file picker and that the mount worked. The mount path, the read-only check, and the unmount were not included in that report. Check for updates on that build returned `CERTIFICATE_VERIFY_FAILED` because the plugin Python did not load the host certificate bundle. At about 8:25 PM ET the user reported that Check for updates works after the certificate-bundle fix. The read-only check, unmount, symlink refusal, and CDEmu state were not part of that report.
+On 2026-11-10 at about 8:20 PM ET the gaming PC, running version 0.2.0 build `b974666`, reported that an ISO could be selected in the file picker and that the mount worked. The mount path, the read-only check, and the unmount were not included in that report. Check for updates on that build returned `CERTIFICATE_VERIFY_FAILED` because the plugin Python did not load the host certificate bundle. At about 8:25 PM ET the user reported that Check for updates works after the certificate-bundle fix.
+
+At about 8:30 PM ET the user reported that the read-only toast, a readable and non-writable mount, unmount of that mount and its loop, and an inactive CDEmu all passed. An ISO chosen through `/var/home/zany130/emulation/roms`, a symlink to `/var/mnt/Emulation/libary/roms`, mounted. The picker supplies the resolved path, so the backend received a path with no symlink component. A path that still contains a symlink is still refused. The toast text was not copied, and a non-ISO file was not part of this report.
 
 ## Gate ledger
 
@@ -122,7 +124,7 @@ On 2026-11-10 at about 8:20 PM ET the gaming PC, running version 0.2.0 build `b9
 | P0-C Permissions | BLOCKED | ACL fixtures and denial tests exist. Plugin-process SG_IO and polkit were not run |
 | P0-D Redumper | BLOCKED | Build `a338878` found the distrobox wrapper and did not execute it. No disc was dumped |
 | P0-E CDEmu / VHBA | BLOCKED | Presence checks exist. No interface handshake or image load was performed, and the daemon was not started |
-| P0-F ISO loop | BLOCKED | Version 0.2.0 build `b974666` selected an ISO and the user reported that the mount worked. The mount path, read-only check, and unmount were not recorded |
+| P0-F ISO loop | BLOCKED | On 2026-11-10 the user reported a read-only mount, unmount of that loop, and inactive CDEmu. The resolved library symlink mounted. The toast text was not copied, and a non-ISO file was not reported |
 | P0-G Steam / Proton | BLOCKED | The live panel listed 21 tool directories and did not read shortcuts. No launch or prefix inspection was performed |
 | P0-H Recovery | BLOCKED | No Decky reload, backend restart, or interrupted job exists |
 
