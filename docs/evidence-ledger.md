@@ -111,7 +111,7 @@ Mount, unmount, and confirmed eject are implemented. Mount uses the read-only op
 
 A picked `.iso` can be sent to UDisks2 `LoopSetup` with `read-only` true, then mounted read-only. The ownership journal records that loop only. Unmount and delete run only when the live backing file still matches the record. A symlink in the path is rejected. CDEmu is not called, and the image is not labeled as a virtual drive. `hardware_validated` stays false.
 
-On 2026-11-10 at about 8:20 PM ET the gaming PC, running version 0.2.0 build `b974666`, reported that an ISO could be selected in the file picker and that the mount worked. The mount path, the read-only check, and the unmount were not included in that report. Check for updates on that build returned `CERTIFICATE_VERIFY_FAILED` because the plugin Python did not load the host certificate bundle.
+On 2026-11-10 at about 8:20 PM ET the gaming PC, running version 0.2.0 build `b974666`, reported that an ISO could be selected in the file picker and that the mount worked. The mount path, the read-only check, and the unmount were not included in that report. Check for updates on that build returned `CERTIFICATE_VERIFY_FAILED` because the plugin Python did not load the host certificate bundle. At about 8:25 PM ET the user reported that Check for updates works after the certificate-bundle fix. The read-only check, unmount, symlink refusal, and CDEmu state were not part of that report.
 
 ## Gate ledger
 
