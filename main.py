@@ -6,6 +6,7 @@ import decky
 from discdeck.diagnostics import DiagnosticService
 from discdeck.lifecycle import Lifecycle
 from discdeck.models import envelope_error, envelope_ok
+from discdeck.runtime import read_build_info
 
 
 class Plugin:
@@ -23,8 +24,11 @@ class Plugin:
     async def _main(self) -> None:
         await self.lifecycle.main()
         self.service.lifecycle_phase = self.lifecycle.phase
+        info = read_build_info(self.service.module_dir)
         decky.logger.info(
-            "DiscDeck phase 2 loaded (effective uid %s). No disc operation was started.",
+            "DiscDeck %s phase %s loaded (effective uid %s). No disc operation was started.",
+            info.get("version") or "unversioned",
+            info.get("phase"),
             os.geteuid(),
         )
 
@@ -61,6 +65,9 @@ class Plugin:
         payload = self.service.probe_event()
         await decky.emit("discdeck:changed", payload)
         return envelope_ok(payload, payload["revision"], payload["epoch"])
+
+    async def check_update(self) -> dict:
+        return self.service.check_update()
 
     async def read_redumper_version(self, allow_untested_wrapper: bool = False) -> dict:
         return self.service.redumper_version_envelope(bool(allow_untested_wrapper))

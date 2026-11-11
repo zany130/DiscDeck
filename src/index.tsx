@@ -2,19 +2,23 @@ import { addEventListener, definePlugin, openFilePicker, removeEventListener, to
 import { staticClasses } from "@decky/ui";
 import { useEffect, useState } from "react";
 import { FaCompactDisc } from "react-icons/fa";
-import { ejectDrive, emitProbeEvent, getSnapshot, mountFilesystem, mountIso, ping, readRedumperVersion, unmountFilesystem, unmountIso } from "./api/bridge";
+import { checkUpdate, ejectDrive, emitProbeEvent, getSnapshot, mountFilesystem, mountIso, ping, readRedumperVersion, unmountFilesystem, unmountIso } from "./api/bridge";
+import { requestDevelopmentInstall } from "./api/installUpdate";
 import { subscribeChanged } from "./api/events";
 import type { DiagnosticSnapshot } from "./api/types";
 import { DiagnosticsPanel } from "./components/DiagnosticsPanel";
 import { actionNotice } from "./state/actionNotice";
 import { chosenIsoPath, isoPickerRequest } from "./state/isoPicker";
 import { acceptSnapshot } from "./state/snapshotReducer";
+import { updateNotice, type UpdateOffer } from "./state/updateNotice";
 
 const refreshers = new Set<() => void>();
 
 function Content() {
   const [snapshot, setSnapshot] = useState<DiagnosticSnapshot | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [updateMessage, setUpdateMessage] = useState<string | null>(null);
+  const [updateOffer, setUpdateOffer] = useState<UpdateOffer | null>(null);
   const [busy, setBusy] = useState(false);
   const [pendingEjectId, setPendingEjectId] = useState<string | null>(null);
   const visible = useQuickAccessVisible();
@@ -57,6 +61,49 @@ function Content() {
       snapshot={snapshot}
       busy={busy}
       error={error}
+      updateMessage={updateMessage}
+      updateOfferLabel={updateOffer?.label ?? null}
+      onCheckUpdate={() => {
+        setBusy(true);
+        void checkUpdate()
+          .then((response) => {
+            if (!response.ok) {
+              setUpdateOffer(null);
+              setUpdateMessage(`${response.code}: ${response.message}`);
+              return;
+            }
+            const notice = updateNotice(response.result);
+            setUpdateMessage(notice.message);
+            setUpdateOffer(notice.offer);
+          })
+          .catch((caught: unknown) => {
+            setUpdateOffer(null);
+            setUpdateMessage(caught instanceof Error ? caught.message : "The update check failed.");
+          })
+          .finally(() => {
+            setBusy(false);
+          });
+      }}
+      onInstallUpdate={() => {
+        if (!updateOffer) {
+          return;
+        }
+        setBusy(true);
+        void requestDevelopmentInstall(updateOffer)
+          .then(() => {
+            const notice = `Confirm the Decky prompt to install version ${updateOffer.label}.`;
+            setUpdateMessage(notice);
+            toaster.toast({ title: "DiscDeck update", body: notice });
+          })
+          .catch((caught: unknown) => {
+            const notice = caught instanceof Error ? caught.message : "The update could not be requested.";
+            setUpdateMessage(notice);
+            toaster.toast({ title: "DiscDeck update", body: notice });
+          })
+          .finally(() => {
+            setBusy(false);
+          });
+      }}
       onRefresh={refresh}
       onProbeEvent={() => {
         void emitProbeEvent();

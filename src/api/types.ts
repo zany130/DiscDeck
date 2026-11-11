@@ -109,7 +109,7 @@ export interface DiagnosticSnapshot {
     udisks2?: { status?: string; reason_code?: string | null; message?: string };
   };
   limitations?: string[];
-  build?: { commit?: string | null; channel?: string; hardware_validated?: boolean };
+  build?: { commit?: string | null; channel?: string; phase?: string; version?: string | null; hardware_validated?: boolean };
 }
 
 export interface SuccessEnvelope<T> {

@@ -11,9 +11,11 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import tempfile
+import zipfile
 from pathlib import Path
 from typing import Any, Callable
 
@@ -30,8 +32,23 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
-def metadata(plan: dict[str, Any], zip_sha256: str) -> dict[str, Any]:
-    return {
+_VERSION = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+$")
+
+
+def plugin_version(zip_path: Path) -> str | None:
+    try:
+        with zipfile.ZipFile(zip_path) as archive:
+            info = json.loads(archive.read("DiscDeck/py_modules/discdeck/build_info.json"))
+    except (OSError, zipfile.BadZipFile, KeyError, json.JSONDecodeError):
+        return None
+    version = info.get("version") if isinstance(info, dict) else None
+    if isinstance(version, str) and _VERSION.fullmatch(version):
+        return version
+    return None
+
+
+def metadata(plan: dict[str, Any], zip_sha256: str, version: str | None = None) -> dict[str, Any]:
+    body = {
         "channel": plan["channel"],
         "commit": plan["commit"],
         "object_key": plan["unique_key"],
@@ -41,6 +58,9 @@ def metadata(plan: dict[str, Any], zip_sha256: str) -> dict[str, Any]:
         "hardware_validated": False,
         "plugin": "DiscDeck",
     }
+    if version:
+        body["version"] = version
+    return body
 
 
 def execute(plan: dict[str, Any], zip_path: Path, *, dry_run: bool, env: dict[str, str], run: Runner) -> dict[str, Any]:
@@ -104,7 +124,7 @@ def prepare_work(plan: dict[str, Any], zip_path: Path, work: Path) -> None:
     canonical = work / plan["canonical_name"]
     shutil.copy2(zip_path, unique)
     shutil.copy2(zip_path, canonical)
-    body = metadata(plan, sha256_file(zip_path))
+    body = metadata(plan, sha256_file(zip_path), plugin_version(zip_path))
     (work / "latest.json").write_text(json.dumps(body, indent=2) + "\n", encoding="utf-8")
     (work / "metadata.json").write_text(json.dumps(body, indent=2) + "\n", encoding="utf-8")
 

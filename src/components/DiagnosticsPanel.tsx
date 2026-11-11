@@ -1,5 +1,6 @@
 import { ButtonItem, PanelSection, PanelSectionRow } from "@decky/ui";
 import type { DiagnosticSnapshot } from "../api/types";
+import { versionLabel } from "../state/updateNotice";
 import { DependencyStatus } from "./DependencyStatus";
 
 function mediaLabel(media: boolean | "unknown" | undefined): string {
@@ -16,6 +17,10 @@ export function DiagnosticsPanel({
   snapshot,
   busy,
   error,
+  updateMessage,
+  updateOfferLabel,
+  onCheckUpdate,
+  onInstallUpdate,
   onRefresh,
   onProbeEvent,
   onVersionPolicy,
@@ -29,6 +34,10 @@ export function DiagnosticsPanel({
   snapshot: DiagnosticSnapshot | null;
   busy: boolean;
   error: string | null;
+  updateMessage: string | null;
+  updateOfferLabel: string | null;
+  onCheckUpdate: () => void;
+  onInstallUpdate: () => void;
   onRefresh: () => void;
   onProbeEvent: () => void;
   onVersionPolicy: () => void;
@@ -81,8 +90,25 @@ export function DiagnosticsPanel({
           </div>
         </PanelSectionRow>
         <PanelSectionRow>
-          <div>Build {snapshot?.build?.commit ?? "unpackaged"} · hardware validated: no</div>
+          <div>{versionLabel(snapshot?.build?.version, snapshot?.build?.commit)} · hardware validated: no</div>
         </PanelSectionRow>
+        <PanelSectionRow>
+          <ButtonItem layout="below" onClick={onCheckUpdate} disabled={busy}>
+            Check for updates
+          </ButtonItem>
+        </PanelSectionRow>
+        {updateMessage ? (
+          <PanelSectionRow>
+            <div>{updateMessage}</div>
+          </PanelSectionRow>
+        ) : null}
+        {updateOfferLabel ? (
+          <PanelSectionRow>
+            <ButtonItem layout="below" onClick={onInstallUpdate} disabled={busy}>
+              {`Install ${updateOfferLabel}`}
+            </ButtonItem>
+          </PanelSectionRow>
+        ) : null}
       </PanelSection>
       {snapshot ? <DependencyStatus modules={snapshot.modules} /> : null}
       <PanelSection title="Drives">

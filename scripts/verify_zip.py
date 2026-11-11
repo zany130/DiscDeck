@@ -5,8 +5,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import zipfile
 from pathlib import Path
+
+_VERSION = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+$")
 
 REQUIRED = (
     "dist/index.js",
@@ -58,6 +61,14 @@ def verify_zip(path: Path) -> list[str]:
                 errors.append("build_info.json claims hardware validation.")
             if info.get("phase") != "2":
                 errors.append("build_info.json is not phase 2.")
+            if _VERSION.fullmatch(str(info.get("version") or "")) is None:
+                errors.append("build_info.json has no plugin version.")
+        package_name = "DiscDeck/package.json"
+        if package_name in names and info_name in names:
+            package = json.loads(archive.read(package_name))
+            info = json.loads(archive.read(info_name))
+            if package.get("version") != info.get("version"):
+                errors.append("package.json version does not match build_info.json.")
     return errors
 
 

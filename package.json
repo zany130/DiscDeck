@@ -1,6 +1,6 @@
 {
   "name": "discdeck",
-  "version": "0.0.1",
+  "version": "0.2.0",
   "description": "DiscDeck Decky plugin for physical discs and read-only filesystem images",
   "type": "module",
   "scripts": {

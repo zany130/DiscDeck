@@ -19,6 +19,7 @@ from discdeck.images import ImageLibrary
 from discdeck.models import DEFAULT_MODULE_ENABLED, envelope_error, envelope_ok, module_status
 from discdeck.physical import GenerationTracker, PhysicalOperations
 from discdeck.runtime import probe_runtime, read_build_info
+from discdeck.updates import UpdateError, check_development_update
 from discdeck.security import assert_physical_udisks_argv
 from discdeck.settings import load_settings
 
@@ -51,6 +52,7 @@ class DiagnosticService:
         access: Any = None,
         getfacl: Any = None,
         stat_fn: Any = None,
+        update_opener: Any = None,
     ) -> None:
         self.environ = environ
         self.os_module = os_module
@@ -71,6 +73,7 @@ class DiagnosticService:
         self.access = access
         self.getfacl = getfacl
         self.stat_fn = stat_fn
+        self.update_opener = update_opener
 
     def snapshot(self) -> dict[str, Any]:
         checked_at = _now()
@@ -192,6 +195,21 @@ class DiagnosticService:
 
     def close_tray(self, drive_id: str) -> dict[str, Any]:
         return self.physical.close_tray(drive_id)
+
+    def check_update(self) -> dict[str, Any]:
+        info = read_build_info(self.module_dir)
+        kwargs: dict[str, Any] = {}
+        if self.update_opener is not None:
+            kwargs["opener"] = self.update_opener
+        try:
+            result = check_development_update(
+                info.get("version") if isinstance(info.get("version"), str) else None,
+                info.get("commit") if isinstance(info.get("commit"), str) else None,
+                **kwargs,
+            )
+        except UpdateError as exc:
+            return envelope_error("NOT_READY", str(exc), retryable=True, revision=self.revision, epoch=self.epoch)
+        return envelope_ok(result, self.revision, self.epoch)
 
     def mount_iso(self, path: str) -> dict[str, Any]:
         return self.images.mount(path)
