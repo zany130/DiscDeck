@@ -1,5 +1,6 @@
 import { ButtonItem, PanelSection, PanelSectionRow, TextField } from "@decky/ui";
-import type { DiagnosticSnapshot } from "../api/types";
+import type { DiagnosticSnapshot, DriveObservation } from "../api/types";
+import { dumpOffer } from "../state/dumpOffer";
 import { versionLabel } from "../state/updateNotice";
 import { DependencyStatus } from "./DependencyStatus";
 
@@ -70,9 +71,77 @@ export function DiagnosticsPanel({
   const redumper = snapshot?.probes?.redumper;
   const cdemu = snapshot?.probes?.cdemu;
   const steam = snapshot?.probes?.steam;
+  const drives = snapshot?.drives ?? [];
+  const dumpTargets: Array<DriveObservation | null> = drives.length > 0 ? drives : [null];
   return (
     <>
-      <PanelSection title="Phase 0 diagnostics">
+      <PanelSection title="Dump">
+        <PanelSectionRow>
+          <div>
+            Dump uses Redumper on that drive's sg node. The disc must be unmounted. Output goes in a new folder. A finished command is not a verified dump. A container wrapper runs only when you start a dump.
+          </div>
+        </PanelSectionRow>
+        <PanelSectionRow>
+          <TextField label="Image name" value={imageName} disabled={busy} onChange={(event) => onImageName(event.target.value)} />
+        </PanelSectionRow>
+        <PanelSectionRow>
+          <div>{outputRoot ? `Output folder ${outputRoot}` : "Choose a folder. DiscDeck creates a new directory inside it."}</div>
+        </PanelSectionRow>
+        <PanelSectionRow>
+          <ButtonItem layout="below" onClick={onChooseDumpFolder} disabled={busy}>
+            Choose dump folder
+          </ButtonItem>
+        </PanelSectionRow>
+        {dumpTargets.map((drive) => {
+          const offer = dumpOffer(drive, outputRoot);
+          const key = drive ? `dump-${drive.drive_id}` : "dump-none";
+          return (
+            <PanelSectionRow key={key}>
+              <ButtonItem
+                layout="below"
+                onClick={() => {
+                  if (drive) {
+                    onDump(drive.drive_id, drive.generation ?? 1);
+                  }
+                }}
+                disabled={busy || !offer.enabled}
+              >
+                {offer.label}
+              </ButtonItem>
+              {offer.reason ? <div>{offer.reason}</div> : null}
+            </PanelSectionRow>
+          );
+        })}
+        {(snapshot?.jobs.length ?? 0) === 0 ? (
+          <PanelSectionRow>
+            <div>No dump is recorded.</div>
+          </PanelSectionRow>
+        ) : (
+          snapshot?.jobs.map((job) => (
+            <PanelSectionRow key={job.job_id}>
+              <div>
+                {job.state} · {job.image_name} · {job.generic_scsi_node ?? "no sg node"} · {job.output_dir} · {job.verification ?? "unverified"} · {job.message}
+              </div>
+              {job.state === "running" || job.state === "orphaned_running" ? (
+                <ButtonItem layout="below" onClick={() => onCancelDump(job.job_id)} disabled={busy}>
+                  Cancel dump
+                </ButtonItem>
+              ) : null}
+              {job.state === "cancel_requested" ? (
+                <ButtonItem layout="below" onClick={() => onForceDump(job.job_id)} disabled={busy}>
+                  {pendingForceJobId === job.job_id ? "Confirm force stop" : "Force stop"}
+                </ButtonItem>
+              ) : null}
+              {job.needs_ack ? (
+                <ButtonItem layout="below" onClick={() => onAcknowledgeDump(job.job_id)} disabled={busy}>
+                  Dump process is gone. Release this drive
+                </ButtonItem>
+              ) : null}
+            </PanelSectionRow>
+          ))
+        )}
+      </PanelSection>
+      <PanelSection title="Diagnostics">
         <PanelSectionRow>
           <div>
             Refresh only reads inventory. Mount, unmount, eject, an ISO mount, and a Redumper dump run when you press those buttons. The result stays in the message below.
@@ -179,59 +248,6 @@ export function DiagnosticsPanel({
               <ButtonItem layout="below" onClick={() => onUnmountIso(image.image_id)} disabled={busy}>
                 Unmount DiscDeck image
               </ButtonItem>
-            </PanelSectionRow>
-          ))
-        )}
-      </PanelSection>
-      <PanelSection title="Preservation">
-        <PanelSectionRow>
-          <div>
-            Dump uses Redumper on that drive's sg node. The disc must be unmounted. Output goes in a new folder. A finished command is not a verified dump. A container wrapper runs only when you start a dump.
-          </div>
-        </PanelSectionRow>
-        <PanelSectionRow>
-          <TextField label="Image name" value={imageName} disabled={busy} onChange={(event) => onImageName(event.target.value)} />
-        </PanelSectionRow>
-        <PanelSectionRow>
-          <div>{outputRoot ? `Output folder ${outputRoot}` : "Choose a folder. DiscDeck creates a new directory inside it."}</div>
-        </PanelSectionRow>
-        <PanelSectionRow>
-          <ButtonItem layout="below" onClick={onChooseDumpFolder} disabled={busy}>
-            Choose dump folder
-          </ButtonItem>
-        </PanelSectionRow>
-        {(snapshot?.drives ?? []).map((drive) => (
-          <PanelSectionRow key={`dump-${drive.drive_id}`}>
-            <ButtonItem layout="below" onClick={() => onDump(drive.drive_id, drive.generation ?? 1)} disabled={busy || !outputRoot || drive.media_present !== true}>
-              {`Dump ${drive.block_node}`}
-            </ButtonItem>
-          </PanelSectionRow>
-        ))}
-        {(snapshot?.jobs.length ?? 0) === 0 ? (
-          <PanelSectionRow>
-            <div>No dump is recorded.</div>
-          </PanelSectionRow>
-        ) : (
-          snapshot?.jobs.map((job) => (
-            <PanelSectionRow key={job.job_id}>
-              <div>
-                {job.state} · {job.image_name} · {job.generic_scsi_node ?? "no sg node"} · {job.output_dir} · {job.verification ?? "unverified"} · {job.message}
-              </div>
-              {job.state === "running" || job.state === "orphaned_running" ? (
-                <ButtonItem layout="below" onClick={() => onCancelDump(job.job_id)} disabled={busy}>
-                  Cancel dump
-                </ButtonItem>
-              ) : null}
-              {job.state === "cancel_requested" ? (
-                <ButtonItem layout="below" onClick={() => onForceDump(job.job_id)} disabled={busy}>
-                  {pendingForceJobId === job.job_id ? "Confirm force stop" : "Force stop"}
-                </ButtonItem>
-              ) : null}
-              {job.needs_ack ? (
-                <ButtonItem layout="below" onClick={() => onAcknowledgeDump(job.job_id)} disabled={busy}>
-                  Dump process is gone. Release this drive
-                </ButtonItem>
-              ) : null}
             </PanelSectionRow>
           ))
         )}
