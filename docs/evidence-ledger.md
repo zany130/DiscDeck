@@ -109,7 +109,9 @@ Mount, unmount, and confirmed eject are implemented. Mount uses the read-only op
 
 ## Phase 2 filesystem images
 
-A picked `.iso` can be sent to UDisks2 `LoopSetup` with `read-only` true, then mounted read-only. The ownership journal records that loop only. Unmount and delete run only when the live backing file still matches the record. A symlink in the path is rejected. CDEmu is not called, and the image is not labeled as a virtual drive. `hardware_validated` stays false. This has not been run on the gaming PC.
+A picked `.iso` can be sent to UDisks2 `LoopSetup` with `read-only` true, then mounted read-only. The ownership journal records that loop only. Unmount and delete run only when the live backing file still matches the record. A symlink in the path is rejected. CDEmu is not called, and the image is not labeled as a virtual drive. `hardware_validated` stays false.
+
+On 2026-11-10 at about 8:20 PM ET the gaming PC, running version 0.2.0 build `b974666`, reported that an ISO could be selected in the file picker and that the mount worked. The mount path, the read-only check, and the unmount were not included in that report. Check for updates on that build returned `CERTIFICATE_VERIFY_FAILED` because the plugin Python did not load the host certificate bundle.
 
 ## Gate ledger
 
@@ -120,7 +122,7 @@ A picked `.iso` can be sent to UDisks2 `LoopSetup` with `read-only` true, then m
 | P0-C Permissions | BLOCKED | ACL fixtures and denial tests exist. Plugin-process SG_IO and polkit were not run |
 | P0-D Redumper | BLOCKED | Build `a338878` found the distrobox wrapper and did not execute it. No disc was dumped |
 | P0-E CDEmu / VHBA | BLOCKED | Presence checks exist. No interface handshake or image load was performed, and the daemon was not started |
-| P0-F ISO loop | BLOCKED | Read-only `LoopSetup` is implemented and covered by mocks. No host ISO mount or unmount has been observed |
+| P0-F ISO loop | BLOCKED | Version 0.2.0 build `b974666` selected an ISO and the user reported that the mount worked. The mount path, read-only check, and unmount were not recorded |
 | P0-G Steam / Proton | BLOCKED | The live panel listed 21 tool directories and did not read shortcuts. No launch or prefix inspection was performed |
 | P0-H Recovery | BLOCKED | No Decky reload, backend restart, or interrupted job exists |
 

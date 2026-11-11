@@ -1,7 +1,10 @@
 import json
 import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
-from discdeck.updates import METADATA_URL, UpdateError, check_development_update
+from discdeck.updates import METADATA_URL, UpdateError, check_development_update, host_cafile, open_metadata
 
 LOCAL = "a" * 40
 REMOTE = "b" * 40
@@ -84,6 +87,29 @@ class UpdateCheckTests(unittest.TestCase):
         with self.assertRaises(UpdateError) as caught:
             check_development_update("0.2.0", LOCAL, opener=opener)
         self.assertIn("could not be read", str(caught.exception))
+
+    def test_host_bundle_is_used_for_the_metadata_request(self) -> None:
+        with TemporaryDirectory() as temporary:
+            fedora = Path(temporary) / "ca-bundle.crt"
+            fedora.write_text("bundle\n", encoding="utf-8")
+            missing = str(Path(temporary) / "missing.crt")
+            self.assertEqual(host_cafile({}, (missing, str(fedora))), str(fedora))
+            explicit = Path(temporary) / "explicit.crt"
+            explicit.write_text("explicit\n", encoding="utf-8")
+            self.assertEqual(host_cafile({"SSL_CERT_FILE": str(explicit)}, (str(fedora),)), str(explicit))
+            seen: dict[str, object] = {}
+
+            def urlopen(request: object, timeout: float = 0, context: object = None) -> object:
+                seen["timeout"] = timeout
+                seen["context"] = context
+                return Body("{}")
+
+            marker = object()
+            with patch("discdeck.updates.ssl.create_default_context", return_value=marker) as create:
+                open_metadata("https://example.test/metadata.json", 9, urlopen=urlopen, cafile=str(fedora))
+            create.assert_called_once_with(cafile=str(fedora))
+            self.assertIs(seen["context"], marker)
+            self.assertEqual(seen["timeout"], 9)
 
 
 if __name__ == "__main__":

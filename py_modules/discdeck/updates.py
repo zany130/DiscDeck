@@ -8,9 +8,12 @@ from the metadata document.
 from __future__ import annotations
 
 import json
+import os
 import re
+import ssl
 import urllib.error
 import urllib.request
+from pathlib import Path
 from typing import Any, Callable
 
 METADATA_URL = "https://github.com/zany130/DiscDeck/releases/download/discdeck-dev/metadata.json"
@@ -20,15 +23,38 @@ _COMMIT = re.compile(r"^[0-9a-fA-F]{40}$")
 _SHA256 = re.compile(r"^[0-9a-fA-F]{64}$")
 
 Opener = Callable[[str, float], Any]
+UrlOpen = Callable[..., Any]
+
+# Decky's plugin Python does not see Bazzite's trust store unless the bundle is named.
+_CA_CANDIDATES = (
+    "/etc/pki/tls/certs/ca-bundle.crt",
+    "/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem",
+    "/etc/ssl/certs/ca-certificates.crt",
+    "/etc/ssl/cert.pem",
+)
 
 
 class UpdateError(Exception):
     pass
 
 
-def open_metadata(url: str, timeout: float) -> Any:
+def host_cafile(environ: dict[str, str] | None = None, candidates: tuple[str, ...] = _CA_CANDIDATES) -> str | None:
+    env = os.environ if environ is None else environ
+    for key in ("SSL_CERT_FILE", "REQUESTS_CA_BUNDLE", "CURL_CA_BUNDLE"):
+        raw = env.get(key)
+        if raw and Path(raw).is_file():
+            return raw
+    for candidate in candidates:
+        if Path(candidate).is_file():
+            return candidate
+    return None
+
+
+def open_metadata(url: str, timeout: float, *, urlopen: UrlOpen = urllib.request.urlopen, cafile: str | None = None) -> Any:
     request = urllib.request.Request(url, headers={"User-Agent": "DiscDeck"})
-    return urllib.request.urlopen(request, timeout=timeout)
+    chosen = host_cafile() if cafile is None else cafile
+    context = ssl.create_default_context(cafile=chosen) if chosen else ssl.create_default_context()
+    return urlopen(request, timeout=timeout, context=context)
 
 
 def check_development_update(
