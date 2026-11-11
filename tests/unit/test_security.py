@@ -1,6 +1,7 @@
 import unittest
 
 from discdeck.errors import UnsafeCommand
+from discdeck.images import loop_setup_argv
 from discdeck.physical import mount_argv
 from discdeck.security import assert_physical_udisks_argv, assert_readonly_argv, redact_home
 
@@ -16,6 +17,8 @@ class SecurityTests(unittest.TestCase):
             ["sudo", "redumper", "--version"],
             ["redumper", "disc", "--drive=/dev/sg1"],
             ["busctl", "--system", "--no-pager", "call", "org.freedesktop.UDisks2", "/org/freedesktop/UDisks2/block_devices/sr0", "org.freedesktop.UDisks2.Filesystem", "Mount", "a{sv}", "1", "options", "s", "ro"],
+            ["udisksctl", "loop-setup", "-f", "/tmp/game.iso", "-r"],
+            loop_setup_argv(17),
         ):
             with self.assertRaises(UnsafeCommand):
                 assert_readonly_argv(argv)
@@ -29,6 +32,14 @@ class SecurityTests(unittest.TestCase):
             assert_physical_udisks_argv(["eject", "/dev/sda"])
         with self.assertRaises(UnsafeCommand):
             assert_physical_udisks_argv(mount_argv("/org/freedesktop/UDisks2/block_devices/sr1")[:-1] + ["rw"])
+        assert_physical_udisks_argv(loop_setup_argv(17))
+        assert_physical_udisks_argv(["udisksctl", "loop-setup", "-f", "/tmp/game.iso", "-r"])
+        with self.assertRaises(UnsafeCommand):
+            assert_physical_udisks_argv(["udisksctl", "loop-setup", "-f", "/tmp/game.iso"])
+        with self.assertRaises(UnsafeCommand):
+            assert_physical_udisks_argv(["udisksctl", "loop-delete", "-b", "/dev/sda"])
+        with self.assertRaises(UnsafeCommand):
+            assert_physical_udisks_argv(loop_setup_argv(17)[:-1] + ["false"])
 
     def test_read_only_queries_are_allowed(self) -> None:
         assert_readonly_argv(["busctl", "--system", "--no-pager", "list"])

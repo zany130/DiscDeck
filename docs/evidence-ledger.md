@@ -107,6 +107,14 @@ Build `c80709b` toasted `physical revision` plus a counter for mount, unmount, a
 
 Mount, unmount, and confirmed eject are implemented. Mount uses the read-only option. Tray close returns `TRAY_CLOSE_UNSUPPORTED` and does not issue a close command. On 2026-11-10 the gaming PC reported that empty-drive mount and unmount returned `NOT_READY`, and that eject opened the tray. Later the same day the user reported that all six follow-up checks passed: a data disc showed media present, read-only mount behaved as specified, DiscDeck unmount removed that mount, an audio disc was refused, eject with a DiscDeck mount unmounted and opened the tray, and after unplug/replug the model names stayed with the right drives. The report does not include the mount path, which drive was used, or the `sr` numbers before and after the replug. Mixed-mode media was not part of the six. `hardware_validated` stays false.
 
+## Phase 2 filesystem images
+
+A picked `.iso` can be sent to UDisks2 `LoopSetup` with `read-only` true, then mounted read-only. The ownership journal records that loop only. Unmount and delete run only when the live backing file still matches the record. A symlink in the path is rejected. CDEmu is not called, and the image is not labeled as a virtual drive. `hardware_validated` stays false.
+
+On 2026-11-10 at about 8:20 PM ET the gaming PC, running version 0.2.0 build `b974666`, reported that an ISO could be selected in the file picker and that the mount worked. The mount path, the read-only check, and the unmount were not included in that report. Check for updates on that build returned `CERTIFICATE_VERIFY_FAILED` because the plugin Python did not load the host certificate bundle. At about 8:25 PM ET the user reported that Check for updates works after the certificate-bundle fix.
+
+At about 8:30 PM ET the user reported that the read-only toast, a readable and non-writable mount, unmount of that mount and its loop, and an inactive CDEmu all passed. An ISO chosen through `/var/home/zany130/emulation/roms`, a symlink to `/var/mnt/Emulation/libary/roms`, mounted. The picker supplies the resolved path, so the backend received a path with no symlink component. A path that still contains a symlink is still refused. The toast text was not copied. At about 8:34 PM ET the user reported that a file that is not an ISO was refused and nothing was mounted. `hardware_validated` stays false because the toast text and mount path were not copied.
+
 ## Gate ledger
 
 | Gate | Status | Why it is not PASS |
@@ -116,7 +124,7 @@ Mount, unmount, and confirmed eject are implemented. Mount uses the read-only op
 | P0-C Permissions | BLOCKED | ACL fixtures and denial tests exist. Plugin-process SG_IO and polkit were not run |
 | P0-D Redumper | BLOCKED | Build `a338878` found the distrobox wrapper and did not execute it. No disc was dumped |
 | P0-E CDEmu / VHBA | BLOCKED | Presence checks exist. No interface handshake or image load was performed, and the daemon was not started |
-| P0-F ISO loop | BLOCKED | `LoopSetup` is not called |
+| P0-F ISO loop | BLOCKED | On 2026-11-10 the user reported a read-only mount, unmount of that loop, inactive CDEmu, a resolved library-symlink mount, and refusal of a non-ISO file. The toast text and mount path were not copied |
 | P0-G Steam / Proton | BLOCKED | The live panel listed 21 tool directories and did not read shortcuts. No launch or prefix inspection was performed |
 | P0-H Recovery | BLOCKED | No Decky reload, backend restart, or interrupted job exists |
 
@@ -124,7 +132,7 @@ Mount, unmount, and confirmed eject are implemented. Mount uses the read-only op
 
 - No `root` flag and no privileged helper.
 - No automatic `modprobe`, service start, mount, eject, dump, or Steam edit.
-- Runtime durability is reported as `untested`. The specified fallback, a `state/` directory under the settings dir, is not created until a restart test shows it is needed.
+- Runtime durability is reported as `untested`. The ISO ownership journal is stored under `state/` in the plugin settings directory because that durability was not measured.
 - Redumper version is not read when the file is a distrobox wrapper.
 - CDEmu methods are not called while the daemon is inactive.
 - `Optical=false` does not override sysfs type 5 or an `sr` node name.

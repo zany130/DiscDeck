@@ -83,6 +83,20 @@ class RuntimeTests(unittest.TestCase):
             self.assertEqual(found["directories"]["settings"]["status"], "unset")
             self.assertEqual(found["directories"]["runtime"]["durability"], "untested")
 
+    def test_picker_home_follows_a_symlink_to_the_real_directory(self) -> None:
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            real = root / "var" / "home" / "hostuser"
+            real.mkdir(parents=True)
+            link = root / "home"
+            link.symlink_to(root / "var" / "home")
+            found = probe_runtime(
+                FakeOs(),
+                FakePwd({"hostuser": SimpleNamespace(pw_name="hostuser", pw_uid=1000, pw_gid=1000)}),
+                {"USER": "hostuser", "DECKY_USER": "hostuser", "HOME": str(link / "hostuser")},
+            )
+            self.assertEqual(found["home"], str(real))
+
     def test_root_flag_is_reported(self) -> None:
         with TemporaryDirectory() as temporary:
             (Path(temporary) / "plugin.json").write_text(json.dumps({"flags": ["root"]}), encoding="utf-8")

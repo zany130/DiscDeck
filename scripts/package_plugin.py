@@ -58,11 +58,14 @@ def stage_plugin(source: Path, stage: Path, commit: str | None) -> None:
                 target = stage / path.relative_to(defaults)
                 target.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(path, target)
+    package = json.loads((source / "package.json").read_text(encoding="utf-8"))
+    version = package.get("version") if isinstance(package, dict) else None
     info_path = stage / "py_modules" / "discdeck" / "build_info.json"
     info = {
         "commit": commit,
         "channel": "development",
-        "phase": "1",
+        "phase": "2",
+        "version": version if isinstance(version, str) else None,
         "hardware_validated": False,
     }
     info_path.write_text(json.dumps(info, indent=2) + "\n", encoding="utf-8")

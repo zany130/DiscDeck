@@ -46,6 +46,7 @@ class PackagingTests(unittest.TestCase):
                 self.assertNotIn("DiscDeck/defaults/note.txt", names)
                 info = json.loads(archive.read("DiscDeck/py_modules/discdeck/build_info.json"))
             self.assertEqual(info["commit"], "abcdef1234567890")
+            self.assertEqual(info["version"], "0.0.1")
             self.assertFalse(info["hardware_validated"])
 
     def test_root_flag_fails_verification(self) -> None:

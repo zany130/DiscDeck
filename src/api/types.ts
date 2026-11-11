@@ -45,11 +45,21 @@ export interface DriveObservation {
   operations?: Record<string, string>;
 }
 
+export interface FilesystemImage {
+  image_id: string;
+  backing_path: string;
+  mount_path?: string;
+  loop_object_path?: string;
+  read_only?: boolean;
+  hardware_validated?: boolean;
+}
+
 export interface DiagnosticSnapshot {
   epoch: string;
   revision: number;
   phase: string;
   hardware_validated: boolean;
+  images?: FilesystemImage[];
   settings_revision: number;
   modules: ModuleStatus[];
   drives: DriveObservation[];
@@ -64,6 +74,7 @@ export interface DiagnosticSnapshot {
     root_requested?: boolean;
     loader_version?: string | null;
     plugin_version?: string | null;
+    home?: string | null;
     privilege?: { status?: string; dropped?: boolean };
     directories?: Record<string, { path?: string | null; exists?: boolean; writable?: boolean; durability?: string }>;
   };
@@ -98,7 +109,7 @@ export interface DiagnosticSnapshot {
     udisks2?: { status?: string; reason_code?: string | null; message?: string };
   };
   limitations?: string[];
-  build?: { commit?: string | null; channel?: string; hardware_validated?: boolean };
+  build?: { commit?: string | null; channel?: string; phase?: string; version?: string | null; hardware_validated?: boolean };
 }
 
 export interface SuccessEnvelope<T> {

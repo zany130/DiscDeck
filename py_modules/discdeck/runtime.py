@@ -148,12 +148,29 @@ def probe_runtime(os_module: Any, pwd_module: Any, environ: dict[str, str]) -> d
         "flag_status": plugin_flags["status"],
         "constants": constants,
         "directories": directories,
+        "home": resolved_directory(environ.get("DECKY_USER_HOME") or environ.get("HOME")),
         "loader_version": environ.get("DECKY_VERSION") or None,
         "plugin_name": environ.get("DECKY_PLUGIN_NAME") or None,
         "plugin_version": environ.get("DECKY_PLUGIN_VERSION") or None,
         "hardware_validated": False,
         "durability": "untested",
     }
+
+
+def resolved_directory(raw: str | None) -> str | None:
+    """Return an absolute directory with symlink components removed."""
+    if not raw:
+        return None
+    path = Path(raw)
+    if not path.is_absolute():
+        return None
+    try:
+        resolved = path.resolve()
+    except OSError:
+        return None
+    if not resolved.is_dir():
+        return None
+    return str(resolved)
 
 
 def _directory_status(raw: str | None) -> dict[str, Any]:
@@ -182,7 +199,7 @@ def _directory_status(raw: str | None) -> dict[str, Any]:
 
 def read_build_info(module_dir: Path) -> dict[str, Any]:
     path = module_dir / "build_info.json"
-    fallback = {"commit": None, "channel": "development", "phase": "1", "hardware_validated": False}
+    fallback = {"commit": None, "channel": "development", "phase": "2", "hardware_validated": False}
     if not path.is_file():
         return fallback
     try:

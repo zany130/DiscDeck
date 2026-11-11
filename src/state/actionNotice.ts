@@ -14,6 +14,17 @@ export function actionNotice(response: Envelope<Record<string, unknown>>): strin
   if (action === "unmount") {
     return "Unmounted the DiscDeck filesystem.";
   }
+  if (action === "mount_iso") {
+    const mountPath = response.result.mount_path;
+    return typeof mountPath === "string" && mountPath.length > 0
+      ? `Mounted the ISO read-only at ${mountPath}`
+      : "UDisks2 mounted the ISO read-only.";
+  }
+  if (action === "unmount_iso") {
+    return response.result.via === "already-gone"
+      ? "The DiscDeck loop was already gone. The record was cleared."
+      : "Unmounted the DiscDeck ISO and removed its loop.";
+  }
   if (action === "eject") {
     if (response.result.via === "user-eject") {
       return "UDisks2 did not authorize this process. The tray command ran as the current user.";

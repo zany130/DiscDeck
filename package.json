@@ -1,7 +1,7 @@
 {
   "name": "discdeck",
-  "version": "0.0.1",
-  "description": "Phase 0 read-only diagnostics for the DiscDeck Decky plugin",
+  "version": "0.2.1",
+  "description": "DiscDeck Decky plugin for physical discs and read-only filesystem images",
   "type": "module",
   "scripts": {
     "build": "rollup -c",

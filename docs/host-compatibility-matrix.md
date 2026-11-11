@@ -18,7 +18,7 @@ This table separates the 2026-11-09 passive inventory from operations Phase 0 ha
 | Redumper | Wrapper in the user bin; container package `772-1`; binary not launched. Build `a634c8e` reported `REDUMPER_MISSING`. Build `a338878` reported `distrobox_wrapper`, version `not_executed`, executed no | Searches PATH, then `$DECKY_USER_HOME/.local/bin` or `$HOME/.local/bin`, then an absolute configured path. Does not execute a wrapper. Does not run `disc` | P0-D BLOCKED |
 | VHBA | Module loaded, version `20260313`, signed, control node ACL present | Checks `/sys/module/vhba` and the control node. Does not `modprobe` | P0-E BLOCKED |
 | CDEmu | Client and daemon 3.3.1 installed. User service inactive and activatable. Bus name had no owner | Reports `DAEMON_INACTIVE`. Does not call `cdemu status` or load an image | P0-E BLOCKED |
-| ISO loop | Not tested. UDisks2 was present | Does not call `LoopSetup` | P0-F BLOCKED |
+| ISO loop | Not tested. UDisks2 was present | Requests a read-only `LoopSetup` only after an ISO is picked. No host mount has been observed | P0-F BLOCKED |
 | Steam / Proton | Native Steam and several Proton tool directories | Lists tool directory names. Does not read shortcuts or prefixes and does not launch | P0-G BLOCKED |
 | Launcher policy | Not configured | Experimental launch and autoplay stay off unless a valid settings file says otherwise. They still cannot become `active` while untested | P0-G / P0-H BLOCKED |
 | Recovery | No DiscDeck process existed | Unload does not eject or delete user data. Restart behavior is untested | P0-H BLOCKED |

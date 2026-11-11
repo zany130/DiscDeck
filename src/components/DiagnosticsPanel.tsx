@@ -1,5 +1,6 @@
 import { ButtonItem, PanelSection, PanelSectionRow } from "@decky/ui";
 import type { DiagnosticSnapshot } from "../api/types";
+import { versionLabel } from "../state/updateNotice";
 import { DependencyStatus } from "./DependencyStatus";
 
 function mediaLabel(media: boolean | "unknown" | undefined): string {
@@ -16,6 +17,10 @@ export function DiagnosticsPanel({
   snapshot,
   busy,
   error,
+  updateMessage,
+  updateOfferLabel,
+  onCheckUpdate,
+  onInstallUpdate,
   onRefresh,
   onProbeEvent,
   onVersionPolicy,
@@ -23,10 +28,16 @@ export function DiagnosticsPanel({
   onMount,
   onUnmount,
   onEject,
+  onPickIso,
+  onUnmountIso,
 }: {
   snapshot: DiagnosticSnapshot | null;
   busy: boolean;
   error: string | null;
+  updateMessage: string | null;
+  updateOfferLabel: string | null;
+  onCheckUpdate: () => void;
+  onInstallUpdate: () => void;
   onRefresh: () => void;
   onProbeEvent: () => void;
   onVersionPolicy: () => void;
@@ -34,6 +45,8 @@ export function DiagnosticsPanel({
   onMount: (driveId: string, generation: number, mediaGeneration: number) => void;
   onUnmount: (driveId: string, generation: number) => void;
   onEject: (driveId: string, generation: number) => void;
+  onPickIso: () => void;
+  onUnmountIso: (imageId: string) => void;
 }) {
   const identity = snapshot?.identity;
   const redumper = snapshot?.probes?.redumper;
@@ -44,7 +57,7 @@ export function DiagnosticsPanel({
       <PanelSection title="Phase 0 diagnostics">
         <PanelSectionRow>
           <div>
-            Refresh only reads inventory. Mount, unmount, and eject run when you press those buttons, and the result stays in the message below.
+            Refresh only reads inventory. Mount, unmount, eject, and an ISO mount run when you press those buttons, and the result stays in the message below.
           </div>
         </PanelSectionRow>
         <PanelSectionRow>
@@ -77,8 +90,25 @@ export function DiagnosticsPanel({
           </div>
         </PanelSectionRow>
         <PanelSectionRow>
-          <div>Build {snapshot?.build?.commit ?? "unpackaged"} · hardware validated: no</div>
+          <div>{versionLabel(snapshot?.build?.version, snapshot?.build?.commit)} · hardware validated: no</div>
         </PanelSectionRow>
+        <PanelSectionRow>
+          <ButtonItem layout="below" onClick={onCheckUpdate} disabled={busy}>
+            Check for updates
+          </ButtonItem>
+        </PanelSectionRow>
+        {updateMessage ? (
+          <PanelSectionRow>
+            <div>{updateMessage}</div>
+          </PanelSectionRow>
+        ) : null}
+        {updateOfferLabel ? (
+          <PanelSectionRow>
+            <ButtonItem layout="below" onClick={onInstallUpdate} disabled={busy}>
+              {`Install ${updateOfferLabel}`}
+            </ButtonItem>
+          </PanelSectionRow>
+        ) : null}
       </PanelSection>
       {snapshot ? <DependencyStatus modules={snapshot.modules} /> : null}
       <PanelSection title="Drives">
@@ -101,6 +131,35 @@ export function DiagnosticsPanel({
               </ButtonItem>
               <ButtonItem layout="below" onClick={() => onEject(drive.drive_id, drive.generation ?? 1)} disabled={busy}>
                 {pendingEjectId === drive.drive_id ? "Confirm eject" : "Eject"}
+              </ButtonItem>
+            </PanelSectionRow>
+          ))
+        )}
+      </PanelSection>
+      <PanelSection title="Filesystem images">
+        <PanelSectionRow>
+          <div>
+            A filesystem image is a read-only file mount. It is not a virtual disc and it does not use CDEmu. The picker lists folders. Open one and choose the .iso file.
+          </div>
+        </PanelSectionRow>
+        <PanelSectionRow>
+          <ButtonItem layout="below" onClick={onPickIso} disabled={busy}>
+            Choose ISO and mount read-only
+          </ButtonItem>
+        </PanelSectionRow>
+        {(snapshot?.images ?? []).length === 0 ? (
+          <PanelSectionRow>
+            <div>No DiscDeck filesystem image is recorded.</div>
+          </PanelSectionRow>
+        ) : (
+          snapshot?.images?.map((image) => (
+            <PanelSectionRow key={image.image_id}>
+              <div>
+                {image.backing_path}
+                {image.mount_path ? ` · mounted at ${image.mount_path}` : ""} · read-only · not hardware-validated
+              </div>
+              <ButtonItem layout="below" onClick={() => onUnmountIso(image.image_id)} disabled={busy}>
+                Unmount DiscDeck image
               </ButtonItem>
             </PanelSectionRow>
           ))

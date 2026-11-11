@@ -5,7 +5,7 @@
   "api_version": 1,
   "publish": {
     "tags": ["diagnostics", "optical"],
-    "description": "DiscDeck physical manager. Inventory can be read, and mount or eject runs only when requested. CI success is not hardware validation.",
+    "description": "DiscDeck physical and filesystem-image manager. Mount and eject run only when requested. An ISO loop is not a virtual disc. CI success is not hardware validation.",
     "image": "https://opengraph.githubassets.com/1/zany130/DiscDeck"
   }
 }
