@@ -57,6 +57,15 @@ class UpdateCheckTests(unittest.TestCase):
             f"https://github.com/zany130/DiscDeck/releases/download/discdeck-dev/DiscDeck-phase0-dev-{REMOTE[:7]}.zip",
         )
         self.assertEqual(result["zip_sha256"], "ab" * 32)
+        self.assertTrue(result["update_available"])
+
+    def test_an_older_published_build_is_not_offered(self) -> None:
+        result = check_development_update("0.2.0", LOCAL, opener=lambda url, timeout: Body(_release(REMOTE, "0.1.0")))
+        self.assertFalse(result["up_to_date"])
+        self.assertFalse(result["update_available"])
+        self.assertIsNone(result["artifact_url"])
+        missing = check_development_update("0.2.0", LOCAL, opener=lambda url, timeout: Body(_release(REMOTE, None)))
+        self.assertFalse(missing["update_available"])
 
     def test_object_name_and_channel_must_match_the_commit(self) -> None:
         bad = _release(REMOTE)

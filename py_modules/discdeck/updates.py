@@ -53,6 +53,7 @@ def check_development_update(
     current_version = local_version if _VERSION.fullmatch(local_version or "") else None
     current_commit = local_commit.lower() if isinstance(local_commit, str) and _COMMIT.fullmatch(local_commit) else None
     same = current_commit is not None and current_commit == remote["commit"]
+    update_available = _is_newer(remote["version"], current_version) and not same
     return {
         "action": "check_update",
         "current_version": current_version,
@@ -60,10 +61,28 @@ def check_development_update(
         "remote_version": remote["version"],
         "remote_commit": remote["commit"],
         "up_to_date": same,
-        "artifact_url": None if same else remote["artifact_url"],
-        "zip_sha256": None if same else remote["zip_sha256"],
+        "update_available": update_available,
+        "artifact_url": remote["artifact_url"] if update_available else None,
+        "zip_sha256": remote["zip_sha256"] if update_available else None,
         "hardware_validated": False,
     }
+
+
+def _is_newer(remote_version: str | None, local_version: str | None) -> bool:
+    remote = _version_parts(remote_version)
+    local = _version_parts(local_version)
+    if remote is None:
+        return False
+    if local is None:
+        return True
+    return remote > local
+
+
+def _version_parts(version: str | None) -> tuple[int, int, int] | None:
+    if version is None or _VERSION.fullmatch(version) is None:
+        return None
+    major, minor, patch = version.split(".")
+    return int(major), int(minor), int(patch)
 
 
 def _remote_release(payload: Any) -> dict[str, Any]:

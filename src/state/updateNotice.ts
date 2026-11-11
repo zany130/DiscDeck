@@ -4,6 +4,7 @@ export interface UpdateCheck {
   remote_version?: string | null;
   remote_commit?: string | null;
   up_to_date?: boolean;
+  update_available?: boolean;
   artifact_url?: string | null;
   zip_sha256?: string | null;
 }
@@ -19,6 +20,10 @@ export function updateNotice(result: UpdateCheck): { message: string; offer: Upd
   const current = result.current_version || "an unpackaged build";
   if (result.up_to_date) {
     return { message: `Version ${current} is the latest development build.`, offer: null };
+  }
+  if (!result.update_available) {
+    const published = result.remote_version || (result.remote_commit ? result.remote_commit.slice(0, 7) : "an older build");
+    return { message: `You are running ${current}. The published development build is ${published}.`, offer: null };
   }
   const remote = result.remote_version || (result.remote_commit ? result.remote_commit.slice(0, 7) : "a newer build");
   const artifactUrl = result.artifact_url;
