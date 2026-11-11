@@ -5,7 +5,7 @@
   "api_version": 1,
   "publish": {
     "tags": ["diagnostics", "optical"],
-    "description": "DiscDeck physical and filesystem-image manager. Mount and eject run only when requested. An ISO loop is not a virtual disc. CI success is not hardware validation.",
+    "description": "DiscDeck physical, filesystem-image, and Redumper preservation manager. Mount, eject, and dumps run only when requested. An ISO loop is not a virtual disc. A Redumper exit code is not a verified dump. CI success is not hardware validation.",
     "image": "https://opengraph.githubassets.com/1/zany130/DiscDeck"
   }
 }

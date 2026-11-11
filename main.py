@@ -10,9 +10,10 @@ from discdeck.runtime import read_build_info
 
 
 class Plugin:
-    """Decky lifecycle, diagnostics, and explicit physical actions.
+    """Decky lifecycle, diagnostics, and explicit disc actions.
 
-    Mount is read-only. Eject requires confirmation. Tray close, dumping,
+    Mount is read-only. Eject requires confirmation. A dump runs only after
+    a request and is not verified by Redumper's exit code. Tray close,
     virtual images, and game launch are not implemented.
     """
 
@@ -56,7 +57,7 @@ class Plugin:
     async def ping(self) -> dict:
         self.service.revision += 1
         return envelope_ok(
-            {"pong": True, "phase": "2", "hardware_validated": False},
+            {"pong": True, "phase": "3", "hardware_validated": False},
             self.service.revision,
             self.service.epoch,
         )
@@ -96,4 +97,25 @@ class Plugin:
     async def unmount_iso(self, image_id: str) -> dict:
         result = self.service.unmount_iso(str(image_id))
         await decky.emit("discdeck:changed", {"epoch": self.service.epoch, "revision": self.service.revision, "domain": "images", "id": image_id})
+        return result
+
+    async def start_dump(self, drive_id: str, generation: int, image_name: str, output_root: str) -> dict:
+        result = self.service.start_dump(str(drive_id), int(generation), str(image_name), str(output_root))
+        job_id = result.get("result", {}).get("job_id") if isinstance(result.get("result"), dict) else None
+        await decky.emit("discdeck:changed", {"epoch": self.service.epoch, "revision": self.service.revision, "domain": "dumps", "id": job_id})
+        return result
+
+    async def cancel_dump(self, job_id: str) -> dict:
+        result = self.service.cancel_dump(str(job_id))
+        await decky.emit("discdeck:changed", {"epoch": self.service.epoch, "revision": self.service.revision, "domain": "dumps", "id": job_id})
+        return result
+
+    async def force_stop_dump(self, job_id: str, confirmed: bool = False) -> dict:
+        result = self.service.force_stop_dump(str(job_id), bool(confirmed))
+        await decky.emit("discdeck:changed", {"epoch": self.service.epoch, "revision": self.service.revision, "domain": "dumps", "id": job_id})
+        return result
+
+    async def acknowledge_dump(self, job_id: str) -> dict:
+        result = self.service.acknowledge_dump(str(job_id))
+        await decky.emit("discdeck:changed", {"epoch": self.service.epoch, "revision": self.service.revision, "domain": "dumps", "id": job_id})
         return result

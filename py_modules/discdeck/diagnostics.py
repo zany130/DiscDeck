@@ -15,12 +15,13 @@ from discdeck.adapters.redumper import read_version as read_redumper_version
 from discdeck.adapters.steam import probe_steam
 from discdeck.adapters.udisks2 import probe_udisks
 from discdeck.commands import CommandRunner
+from discdeck.dumps import DumpJobs
 from discdeck.images import ImageLibrary
 from discdeck.models import DEFAULT_MODULE_ENABLED, envelope_error, envelope_ok, module_status
 from discdeck.physical import GenerationTracker, PhysicalOperations
 from discdeck.runtime import probe_runtime, read_build_info
 from discdeck.updates import UpdateError, check_development_update
-from discdeck.security import assert_physical_udisks_argv
+from discdeck.security import assert_dump_argv, assert_physical_udisks_argv
 from discdeck.settings import load_settings
 
 LIMITATIONS = (
@@ -28,7 +29,7 @@ LIMITATIONS = (
     "A filesystem image is mounted only after an ISO is picked. It is not a virtual disc, and CDEmu is not used.",
     "A readable inventory is not a passed hardware gate. hardware_validated stays false.",
     "Runtime-directory durability across Decky restarts was not measured.",
-    "Redumper is not executed when the discovered file is a container wrapper.",
+    "Redumper disc runs only after an explicit dump. A container wrapper is executed only for that dump. Exit code 0 is not a verified dump.",
     "An inactive CDEmu daemon is not activated and its device methods are not called.",
     "Steam shortcuts and Proton prefixes are not read or modified.",
 )
@@ -53,6 +54,9 @@ class DiagnosticService:
         getfacl: Any = None,
         stat_fn: Any = None,
         update_opener: Any = None,
+        dump_runner: Any | None = None,
+        dump_supervisor: Any | None = None,
+        disk_free: Any | None = None,
     ) -> None:
         self.environ = environ
         self.os_module = os_module
@@ -62,6 +66,8 @@ class DiagnosticService:
         self.generations = GenerationTracker()
         self.physical = PhysicalOperations(self)
         self.images = ImageLibrary(self)
+        self.dump_runner = dump_runner or CommandRunner(policy=assert_dump_argv)
+        self.dumps = DumpJobs(self, supervisor=dump_supervisor, disk_free=disk_free)
         self.sysfs_root = sysfs_root or Path("/sys")
         self.root = root or Path("/")
         self.dev_root = dev_root or Path("/dev")
@@ -86,6 +92,7 @@ class DiagnosticService:
         udisks = probe_udisks(self.runner)
         _merge_media(devices["drives"], udisks.get("drives", []))
         self.generations.observe(devices["drives"])
+        self.dumps.reconcile(devices["drives"])
         permission_kwargs: dict[str, Any] = {}
         if self.access is not None:
             permission_kwargs["access"] = self.access
@@ -107,12 +114,13 @@ class DiagnosticService:
             cdemu=cdemu,
             steam=steam,
             settings_status=settings_state["status"],
+            dump_operation_active=self.dumps.operation_active(),
         )
         self.revision += 1
         return {
             "epoch": self.epoch,
             "revision": self.revision,
-            "phase": "2",
+            "phase": "3",
             "hardware_validated": False,
             "settings_revision": settings_state["settings_revision"],
             "settings": settings_state,
@@ -122,7 +130,7 @@ class DiagnosticService:
             "drives": devices["drives"],
             "images": self.images.public_records(),
             "virtual_slots": [],
-            "jobs": [],
+            "jobs": self.dumps.public_jobs(),
             "probes": {
                 "runtime": runtime,
                 "devices": {key: value for key, value in devices.items() if key != "drives"},
@@ -156,7 +164,7 @@ class DiagnosticService:
                 epoch=self.epoch,
             )
         return envelope_ok(
-            {"module": modules[0], "hardware_validated": False, "phase": "2"},
+            {"module": modules[0], "hardware_validated": False, "phase": "3"},
             self.revision,
             self.epoch,
         )
@@ -217,6 +225,18 @@ class DiagnosticService:
     def unmount_iso(self, image_id: str) -> dict[str, Any]:
         return self.images.unmount(image_id)
 
+    def start_dump(self, drive_id: str, generation: int, image_name: str, output_root: str) -> dict[str, Any]:
+        return self.dumps.start(drive_id, generation, image_name, output_root)
+
+    def cancel_dump(self, job_id: str) -> dict[str, Any]:
+        return self.dumps.cancel(job_id)
+
+    def force_stop_dump(self, job_id: str, confirmed: bool) -> dict[str, Any]:
+        return self.dumps.force_stop(job_id, confirmed)
+
+    def acknowledge_dump(self, job_id: str) -> dict[str, Any]:
+        return self.dumps.acknowledge(job_id)
+
 
 def _modules(
     *,
@@ -229,6 +249,7 @@ def _modules(
     cdemu: dict[str, Any],
     steam: dict[str, Any],
     settings_status: str,
+    dump_operation_active: bool = False,
 ) -> list[dict[str, Any]]:
     physical_capability, physical_reason, physical_message = _physical_capability(devices, udisks)
     iso_capability, iso_reason, iso_message = _iso_capability(udisks)
@@ -259,6 +280,7 @@ def _modules(
             reason_code=dump_reason,
             message=dump_message,
             checked_at=checked_at,
+            operation_active=dump_operation_active,
             details={"version_status": redumper.get("version_status"), "launch_kind": redumper.get("launch_kind")},
         ),
         module_status(
@@ -337,9 +359,17 @@ def _dump_capability(redumper: dict[str, Any], devices: dict[str, Any], permissi
         return ("missing", "REDUMPER_MISSING", redumper["message"])
     sg_nodes = [drive["generic_scsi_node"] for drive in devices["drives"] if drive.get("generic_scsi_node")]
     relevant = [node for node in permissions["nodes"] if node["node"] in sg_nodes]
-    if sg_nodes and relevant and all(node["status"] == "denied" for node in relevant):
-        return ("denied", "SG_ACCESS_DENIED", "The effective user cannot access the mapped generic SCSI nodes.")
-    return ("untested", "DUMP_NOT_RUN", "Redumper discovery does not prove a dump, an SG_IO transfer, or a supported command line.")
+    if not sg_nodes:
+        return ("untested", "SG_NODE_NOT_FOUND", "No optical drive exposed a generic SCSI node.")
+    if relevant and all(node["status"] == "denied" for node in relevant):
+        return ("denied", "SG_ACCESS_DENIED", "The effective user cannot access the mapped generic SCSI nodes. The plugin was not given root.")
+    if not relevant or any(node["status"] != "observed" for node in relevant):
+        return ("untested", "SG_NODE_NOT_FOUND", "A generic SCSI node was named, but this process could not inspect it.")
+    return (
+        "ready",
+        "DUMP_NOT_VALIDATED",
+        "Redumper and a generic SCSI node are visible. A dump starts only when you request one. A zero exit code is not a verified dump.",
+    )
 
 
 def _coerce_capability(status: str) -> str:

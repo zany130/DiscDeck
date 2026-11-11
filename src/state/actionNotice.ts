@@ -25,6 +25,18 @@ export function actionNotice(response: Envelope<Record<string, unknown>>): strin
       ? "The DiscDeck loop was already gone. The record was cleared."
       : "Unmounted the DiscDeck ISO and removed its loop.";
   }
+  if (action === "start_dump") {
+    return "Redumper started. Progress is indeterminate, and a finished process is not a verified dump.";
+  }
+  if (action === "cancel_dump") {
+    return "Cancel was requested. The output folder was kept.";
+  }
+  if (action === "force_stop_dump") {
+    return "Force stop was sent. The output folder was kept and was not verified.";
+  }
+  if (action === "acknowledge_dump") {
+    return "This drive is no longer held by that dump. The output was kept and was not verified.";
+  }
   if (action === "eject") {
     if (response.result.via === "user-eject") {
       return "UDisks2 did not authorize this process. The tray command ran as the current user.";

@@ -45,4 +45,4 @@ The publish job runs only for a push whose branch is in `DISCDECK_PUBLISH_BRANCH
 
 ## Safety boundaries
 
-Do not add the `root` plugin flag. Do not call `modprobe`, start `cdemu-daemon`, mount or eject, run `redumper disc`, or edit Steam files from a diagnostic probe. New host commands have to go through `discdeck.security.assert_readonly_argv`.
+Do not add the `root` plugin flag. Do not call `modprobe`, start `cdemu-daemon`, or edit Steam files from a diagnostic probe. Mount, eject, and `redumper disc` run only through their explicit action policies. Diagnostic probes stay on `assert_readonly_argv`.

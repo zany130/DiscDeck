@@ -1,8 +1,8 @@
-"""Redumper discovery without disc access.
+"""Redumper discovery.
 
-A distrobox export wrapper is identified and not executed. ``--version`` is
-available only for a non-wrapper binary, and only when a caller explicitly
-requests it. No ``disc`` command is ever constructed.
+A distrobox export wrapper is identified here and is not executed by discovery.
+``--version`` from the diagnostic button stays opt-in for a wrapper. Preservation
+builds the disc command in ``discdeck.dumps``.
 """
 
 from __future__ import annotations

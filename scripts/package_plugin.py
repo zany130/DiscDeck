@@ -64,7 +64,7 @@ def stage_plugin(source: Path, stage: Path, commit: str | None) -> None:
     info = {
         "commit": commit,
         "channel": "development",
-        "phase": "2",
+        "phase": "3",
         "version": version if isinstance(version, str) else None,
         "hardware_validated": False,
     }
