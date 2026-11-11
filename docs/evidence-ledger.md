@@ -107,6 +107,10 @@ Build `c80709b` toasted `physical revision` plus a counter for mount, unmount, a
 
 Mount, unmount, and confirmed eject are implemented. Mount uses the read-only option. Tray close returns `TRAY_CLOSE_UNSUPPORTED` and does not issue a close command. On 2026-11-10 the gaming PC reported that empty-drive mount and unmount returned `NOT_READY`, and that eject opened the tray. Later the same day the user reported that all six follow-up checks passed: a data disc showed media present, read-only mount behaved as specified, DiscDeck unmount removed that mount, an audio disc was refused, eject with a DiscDeck mount unmounted and opened the tray, and after unplug/replug the model names stayed with the right drives. The report does not include the mount path, which drive was used, or the `sr` numbers before and after the replug. Mixed-mode media was not part of the six. `hardware_validated` stays false.
 
+## Phase 2 filesystem images
+
+A picked `.iso` can be sent to UDisks2 `LoopSetup` with `read-only` true, then mounted read-only. The ownership journal records that loop only. Unmount and delete run only when the live backing file still matches the record. A symlink in the path is rejected. CDEmu is not called, and the image is not labeled as a virtual drive. `hardware_validated` stays false. This has not been run on the gaming PC.
+
 ## Gate ledger
 
 | Gate | Status | Why it is not PASS |
@@ -116,7 +120,7 @@ Mount, unmount, and confirmed eject are implemented. Mount uses the read-only op
 | P0-C Permissions | BLOCKED | ACL fixtures and denial tests exist. Plugin-process SG_IO and polkit were not run |
 | P0-D Redumper | BLOCKED | Build `a338878` found the distrobox wrapper and did not execute it. No disc was dumped |
 | P0-E CDEmu / VHBA | BLOCKED | Presence checks exist. No interface handshake or image load was performed, and the daemon was not started |
-| P0-F ISO loop | BLOCKED | `LoopSetup` is not called |
+| P0-F ISO loop | BLOCKED | Read-only `LoopSetup` is implemented and covered by mocks. No host ISO mount or unmount has been observed |
 | P0-G Steam / Proton | BLOCKED | The live panel listed 21 tool directories and did not read shortcuts. No launch or prefix inspection was performed |
 | P0-H Recovery | BLOCKED | No Decky reload, backend restart, or interrupted job exists |
 
@@ -124,7 +128,7 @@ Mount, unmount, and confirmed eject are implemented. Mount uses the read-only op
 
 - No `root` flag and no privileged helper.
 - No automatic `modprobe`, service start, mount, eject, dump, or Steam edit.
-- Runtime durability is reported as `untested`. The specified fallback, a `state/` directory under the settings dir, is not created until a restart test shows it is needed.
+- Runtime durability is reported as `untested`. The ISO ownership journal is stored under `state/` in the plugin settings directory because that durability was not measured.
 - Redumper version is not read when the file is a distrobox wrapper.
 - CDEmu methods are not called while the daemon is inactive.
 - `Optical=false` does not override sysfs type 5 or an `sr` node name.

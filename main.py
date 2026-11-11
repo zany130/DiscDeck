@@ -24,7 +24,7 @@ class Plugin:
         await self.lifecycle.main()
         self.service.lifecycle_phase = self.lifecycle.phase
         decky.logger.info(
-            "DiscDeck phase 1 loaded (effective uid %s). No disc operation was started.",
+            "DiscDeck phase 2 loaded (effective uid %s). No disc operation was started.",
             os.geteuid(),
         )
 
@@ -52,7 +52,7 @@ class Plugin:
     async def ping(self) -> dict:
         self.service.revision += 1
         return envelope_ok(
-            {"pong": True, "phase": "1", "hardware_validated": False},
+            {"pong": True, "phase": "2", "hardware_validated": False},
             self.service.revision,
             self.service.epoch,
         )
@@ -78,4 +78,15 @@ class Plugin:
     async def eject_drive(self, drive_id: str, generation: int, confirmed: bool = False) -> dict:
         result = self.service.eject_drive(drive_id, int(generation), bool(confirmed))
         await decky.emit("discdeck:changed", {"epoch": self.service.epoch, "revision": self.service.revision, "domain": "physical", "id": drive_id})
+        return result
+
+    async def mount_iso(self, path: str) -> dict:
+        result = self.service.mount_iso(str(path))
+        image_id = result.get("result", {}).get("image_id") if isinstance(result.get("result"), dict) else None
+        await decky.emit("discdeck:changed", {"epoch": self.service.epoch, "revision": self.service.revision, "domain": "images", "id": image_id})
+        return result
+
+    async def unmount_iso(self, image_id: str) -> dict:
+        result = self.service.unmount_iso(str(image_id))
+        await decky.emit("discdeck:changed", {"epoch": self.service.epoch, "revision": self.service.revision, "domain": "images", "id": image_id})
         return result

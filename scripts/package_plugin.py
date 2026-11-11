@@ -62,7 +62,7 @@ def stage_plugin(source: Path, stage: Path, commit: str | None) -> None:
     info = {
         "commit": commit,
         "channel": "development",
-        "phase": "1",
+        "phase": "2",
         "hardware_validated": False,
     }
     info_path.write_text(json.dumps(info, indent=2) + "\n", encoding="utf-8")

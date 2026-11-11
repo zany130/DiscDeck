@@ -6,6 +6,7 @@ on:
     branches:
       - main
       - cursor/phase0-foundation-beb3
+      - cursor/phase2-iso-library-beb3
 
 permissions:
   contents: read
@@ -102,7 +103,7 @@ jobs:
         env:
           ALLOW: ${{ vars.DISCDECK_PUBLISH_BRANCHES }}
         run: |
-          branches="${ALLOW:-main,cursor/phase0-foundation-beb3}"
+          branches="${ALLOW:-main,cursor/phase0-foundation-beb3,cursor/phase2-iso-library-beb3}"
           case ",${branches}," in
             *",${GITHUB_REF_NAME}",*) echo "publish=true" >> "$GITHUB_OUTPUT" ;;
             *) echo "publish=false" >> "$GITHUB_OUTPUT" ;;

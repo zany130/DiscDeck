@@ -22,7 +22,13 @@ class CommandRunner:
     def __init__(self, policy: Any = assert_readonly_argv) -> None:
         self.policy = policy
 
-    def __call__(self, argv: list[str], timeout: float = 5, env: dict[str, str] | None = None) -> CommandResult:
+    def __call__(
+        self,
+        argv: list[str],
+        timeout: float = 5,
+        env: dict[str, str] | None = None,
+        pass_fds: tuple[int, ...] = (),
+    ) -> CommandResult:
         self.policy(argv)
         try:
             completed = subprocess.run(
@@ -33,6 +39,7 @@ class CommandRunner:
                 text=True,
                 timeout=timeout,
                 env=env,
+                pass_fds=pass_fds,
             )
         except FileNotFoundError:
             return CommandResult(argv, 127, "", "not found")
@@ -47,12 +54,20 @@ class ScriptedRunner:
     def __init__(self, responses: dict[tuple[str, ...], CommandResult] | None = None, policy: Callable[[list[str]], None] = assert_readonly_argv) -> None:
         self.responses = responses or {}
         self.calls: list[list[str]] = []
+        self.passed_fds: list[tuple[int, ...]] = []
         self.policy = policy
 
-    def __call__(self, argv: list[str], timeout: float = 5, env: dict[str, str] | None = None) -> CommandResult:
+    def __call__(
+        self,
+        argv: list[str],
+        timeout: float = 5,
+        env: dict[str, str] | None = None,
+        pass_fds: tuple[int, ...] = (),
+    ) -> CommandResult:
         del env
         self.policy(argv)
         self.calls.append(list(argv))
+        self.passed_fds.append(tuple(pass_fds))
         match = self.responses.get(tuple(argv))
         if match is None:
             return CommandResult(list(argv), 127, "", "not found")

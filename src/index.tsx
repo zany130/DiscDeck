@@ -1,8 +1,8 @@
-import { addEventListener, definePlugin, removeEventListener, toaster, useQuickAccessVisible } from "@decky/api";
+import { addEventListener, definePlugin, openFilePicker, removeEventListener, toaster, useQuickAccessVisible } from "@decky/api";
 import { staticClasses } from "@decky/ui";
 import { useEffect, useState } from "react";
 import { FaCompactDisc } from "react-icons/fa";
-import { ejectDrive, emitProbeEvent, getSnapshot, mountFilesystem, ping, readRedumperVersion, unmountFilesystem } from "./api/bridge";
+import { ejectDrive, emitProbeEvent, getSnapshot, mountFilesystem, mountIso, ping, readRedumperVersion, unmountFilesystem, unmountIso } from "./api/bridge";
 import { subscribeChanged } from "./api/events";
 import type { DiagnosticSnapshot } from "./api/types";
 import { DiagnosticsPanel } from "./components/DiagnosticsPanel";
@@ -10,6 +10,8 @@ import { actionNotice } from "./state/actionNotice";
 import { acceptSnapshot } from "./state/snapshotReducer";
 
 const refreshers = new Set<() => void>();
+/** FileSelectionType.FILE from @decky/api. The published package does not export the enum value. */
+const PICK_FILE = 0;
 
 function Content() {
   const [snapshot, setSnapshot] = useState<DiagnosticSnapshot | null>(null);
@@ -130,6 +132,49 @@ function Content() {
             const notice = caught instanceof Error ? caught.message : "Eject failed.";
             setError(notice);
             toaster.toast({ title: "DiscDeck eject", body: notice });
+          })
+          .finally(() => {
+            setBusy(false);
+            refresh();
+          });
+      }}
+      onPickIso={() => {
+        setPendingEjectId(null);
+        setBusy(true);
+        void openFilePicker(PICK_FILE, "/", true, false, undefined, ["iso"], false, false, 1)
+          .then((picked) => {
+            if (!picked || picked.path.length === 0) {
+              return;
+            }
+            return mountIso(picked.path).then((response) => {
+              const notice = actionNotice(response);
+              setError(notice);
+              toaster.toast({ title: "DiscDeck ISO", body: notice });
+            });
+          })
+          .catch((caught: unknown) => {
+            const notice = caught instanceof Error ? caught.message : "The ISO request failed.";
+            setError(notice);
+            toaster.toast({ title: "DiscDeck ISO", body: notice });
+          })
+          .finally(() => {
+            setBusy(false);
+            refresh();
+          });
+      }}
+      onUnmountIso={(imageId) => {
+        setPendingEjectId(null);
+        setBusy(true);
+        void unmountIso(imageId)
+          .then((response) => {
+            const notice = actionNotice(response);
+            setError(notice);
+            toaster.toast({ title: "DiscDeck ISO", body: notice });
+          })
+          .catch((caught: unknown) => {
+            const notice = caught instanceof Error ? caught.message : "Unmount failed.";
+            setError(notice);
+            toaster.toast({ title: "DiscDeck ISO", body: notice });
           })
           .finally(() => {
             setBusy(false);

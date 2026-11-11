@@ -45,11 +45,21 @@ export interface DriveObservation {
   operations?: Record<string, string>;
 }
 
+export interface FilesystemImage {
+  image_id: string;
+  backing_path: string;
+  mount_path?: string;
+  loop_object_path?: string;
+  read_only?: boolean;
+  hardware_validated?: boolean;
+}
+
 export interface DiagnosticSnapshot {
   epoch: string;
   revision: number;
   phase: string;
   hardware_validated: boolean;
+  images?: FilesystemImage[];
   settings_revision: number;
   modules: ModuleStatus[];
   drives: DriveObservation[];

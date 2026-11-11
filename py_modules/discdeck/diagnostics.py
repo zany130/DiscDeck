@@ -1,4 +1,4 @@
-"""Compose read-only Phase 0 probes into one snapshot."""
+"""Compose diagnostic probes and explicit disc actions into one snapshot."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from discdeck.adapters.redumper import read_version as read_redumper_version
 from discdeck.adapters.steam import probe_steam
 from discdeck.adapters.udisks2 import probe_udisks
 from discdeck.commands import CommandRunner
-from discdeck.commands import CommandRunner
+from discdeck.images import ImageLibrary
 from discdeck.models import DEFAULT_MODULE_ENABLED, envelope_error, envelope_ok, module_status
 from discdeck.physical import GenerationTracker, PhysicalOperations
 from discdeck.runtime import probe_runtime, read_build_info
@@ -24,6 +24,7 @@ from discdeck.settings import load_settings
 
 LIMITATIONS = (
     "Mount, unmount, and eject run only after an explicit request. Tray close is not attempted.",
+    "A filesystem image is mounted only after an ISO is picked. It is not a virtual disc, and CDEmu is not used.",
     "A readable inventory is not a passed hardware gate. hardware_validated stays false.",
     "Runtime-directory durability across Decky restarts was not measured.",
     "Redumper is not executed when the discovered file is a container wrapper.",
@@ -58,6 +59,7 @@ class DiagnosticService:
         self.mutation_runner = mutation_runner or CommandRunner(policy=assert_physical_udisks_argv)
         self.generations = GenerationTracker()
         self.physical = PhysicalOperations(self)
+        self.images = ImageLibrary(self)
         self.sysfs_root = sysfs_root or Path("/sys")
         self.root = root or Path("/")
         self.dev_root = dev_root or Path("/dev")
@@ -107,7 +109,7 @@ class DiagnosticService:
         return {
             "epoch": self.epoch,
             "revision": self.revision,
-            "phase": "1",
+            "phase": "2",
             "hardware_validated": False,
             "settings_revision": settings_state["settings_revision"],
             "settings": settings_state,
@@ -115,6 +117,7 @@ class DiagnosticService:
             "build": read_build_info(self.module_dir),
             "modules": modules,
             "drives": devices["drives"],
+            "images": self.images.public_records(),
             "virtual_slots": [],
             "jobs": [],
             "probes": {
@@ -150,7 +153,7 @@ class DiagnosticService:
                 epoch=self.epoch,
             )
         return envelope_ok(
-            {"module": modules[0], "hardware_validated": False, "phase": "1"},
+            {"module": modules[0], "hardware_validated": False, "phase": "2"},
             self.revision,
             self.epoch,
         )
@@ -189,6 +192,12 @@ class DiagnosticService:
 
     def close_tray(self, drive_id: str) -> dict[str, Any]:
         return self.physical.close_tray(drive_id)
+
+    def mount_iso(self, path: str) -> dict[str, Any]:
+        return self.images.mount(path)
+
+    def unmount_iso(self, image_id: str) -> dict[str, Any]:
+        return self.images.unmount(image_id)
 
 
 def _modules(
@@ -292,6 +301,12 @@ def _physical_capability(devices: dict[str, Any], udisks: dict[str, Any]) -> tup
 
 
 def _iso_capability(udisks: dict[str, Any]) -> tuple[str, str, str]:
+    if udisks["status"] == "observed":
+        return (
+            "ready",
+            "UDISKS_OBSERVED",
+            "UDisks2 can be read. A read-only ISO loop can be requested. It is not a virtual optical drive and it is not hardware-validated.",
+        )
     if udisks["status"] == "missing":
         return ("missing", udisks["reason_code"], "ISO loop setup was not attempted because UDisks2 is unavailable.")
     if udisks["status"] == "denied":
