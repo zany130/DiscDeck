@@ -39,9 +39,9 @@ The ZIP root is `DiscDeck/` and contains `dist/index.js`, `plugin.json`, `packag
 
 ## CI
 
-`.github/workflows/ci.yml` runs on pull requests and on pushes to `main` and `cursor/phase0-foundation-beb3`. It installs the lockfile, runs the checks above, builds the ZIP, verifies it, and uploads `DiscDeck-phase0-dev-<full-sha>`.
+`.github/workflows/ci.yml` runs on pull requests and on pushes to `main`, `cursor/phase0-foundation-beb3`, `cursor/phase2-iso-library-beb3`, and `cursor/phase3-redumper-beb3`. It installs the lockfile, runs the checks above, builds the ZIP, verifies it, and uploads `DiscDeck-phase0-dev-<full-sha>`.
 
-The publish job runs only for a push whose branch is in `DISCDECK_PUBLISH_BRANCHES` (default `main,cursor/phase0-foundation-beb3`). See [distribution.md](distribution.md).
+The publish job runs only for a push whose branch is in `DISCDECK_PUBLISH_BRANCHES` (default `main,cursor/phase0-foundation-beb3,cursor/phase2-iso-library-beb3,cursor/phase3-redumper-beb3`). See [distribution.md](distribution.md).
 
 ## Safety boundaries
 

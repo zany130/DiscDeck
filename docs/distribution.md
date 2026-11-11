@@ -33,7 +33,7 @@ No custom domain is configured. `diskdecky.dev` is not assumed. Set the public b
 
 ## What already runs
 
-On a push to `main` or `cursor/phase0-foundation-beb3`, CI publishes with `DISCDECK_PUBLISH_MODE`:
+On a push to an allowlisted branch, CI publishes with `DISCDECK_PUBLISH_MODE`:
 
 - `auto` (the default when the variable is unset): use R2 when all R2 secrets exist, otherwise use a GitHub release when the repository is public.
 - `r2`: require R2 secrets; skip publication if they are absent.
@@ -61,7 +61,7 @@ The worker source is `distribution/worker.mjs`. It does not list the bucket and 
 
 | Name | Purpose |
 |---|---|
-| `DISCDECK_PUBLISH_BRANCHES` | Comma-separated branch names allowed to publish development builds. Default `main,cursor/phase0-foundation-beb3`. The workflow trigger list must include those branches too. |
+| `DISCDECK_PUBLISH_BRANCHES` | Comma-separated branch names allowed to publish development builds. Default `main,cursor/phase0-foundation-beb3,cursor/phase2-iso-library-beb3,cursor/phase3-redumper-beb3`. The workflow trigger list must include those branches too. |
 | `DISCDECK_PUBLISH_MODE` | `auto`, `r2`, `github-release`, or `none`. |
 | `DISCDECK_STABLE_PUBLISH_ENABLED` | Must be `true` before the manual stable workflow can run. Leave it unset during Phase 0. |
 
