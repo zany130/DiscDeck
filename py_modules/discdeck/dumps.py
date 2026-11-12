@@ -10,7 +10,9 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import pty
 import re
+import select
 import shutil
 import signal
 import subprocess
@@ -110,35 +112,59 @@ class HostDump:
 class HostSupervisor:
     """Start Redumper in its own session and copy its output into a bounded log."""
 
-    def spawn(self, argv: list[str], log_path: Path, on_exit: Callable[[int, int], None]) -> HostDump:
+    def spawn(
+        self,
+        argv: list[str],
+        log_path: Path,
+        on_exit: Callable[[int, int], None],
+        cwd: str | None = None,
+        env: dict[str, str] | None = None,
+    ) -> HostDump:
         assert_dump_argv(argv)
         log_path.parent.mkdir(parents=True, exist_ok=True)
         log_handle = log_path.open("ab", buffering=0)
-        process = subprocess.Popen(
-            argv,
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            start_new_session=True,
-            close_fds=True,
-        )
+        master, slave = pty.openpty()
+        try:
+            process = subprocess.Popen(
+                argv,
+                stdin=slave,
+                stdout=slave,
+                stderr=slave,
+                cwd=cwd,
+                env=env,
+                start_new_session=True,
+                close_fds=True,
+            )
+        except Exception:
+            os.close(master)
+            os.close(slave)
+            log_handle.close()
+            raise
+        os.close(slave)
         dump = HostDump(process)
 
         def drain() -> None:
             written = 0
-            stream = process.stdout
             try:
-                if stream is not None:
-                    while True:
-                        chunk = stream.read(65536)
-                        if not chunk:
-                            break
-                        if written < MAX_LOG_BYTES:
-                            take = chunk[: MAX_LOG_BYTES - written]
-                            log_handle.write(take)
-                            written += len(take)
+                while True:
+                    if process.poll() is not None and not select.select([master], [], [], 0)[0]:
+                        break
+                    readable, _, _ = select.select([master], [], [], 0.2)
+                    if not readable:
+                        continue
+                    try:
+                        chunk = os.read(master, 65536)
+                    except OSError:
+                        break
+                    if not chunk:
+                        break
+                    if written < MAX_LOG_BYTES:
+                        take = chunk[: MAX_LOG_BYTES - written]
+                        log_handle.write(take)
+                        written += len(take)
                 code = process.wait()
             finally:
+                os.close(master)
                 log_handle.close()
             on_exit(process.pid, code)
 
@@ -261,18 +287,21 @@ class DumpJobs:
             self._local_preflight.add(job_id)
             self._jobs.append(job)
             self._store_locked()
-        version = self.service.dump_runner(version_argv(binary), timeout=30)
+        env, cwd = _host_launch(self.service.environ, getattr(self.service, "home", None))
+        version = self.service.dump_runner(version_argv(binary), timeout=30, env=env, cwd=cwd, pty=True)
         version_line = _first_line(version.stdout) or _first_line(version.stderr)
         if version.code != 0 or not version_line:
-            self._finish_preflight(job_id, "failed", "REDUMPER_VERSION_FAILED", "redumper --version did not return a usable version, so the disc command was not started.")
-            return self._error("UNSUPPORTED_REDUMPER_VERSION", "redumper --version did not return a usable version, so the disc command was not started.")
+            detail = version_line or "no output"
+            notice = f"redumper --version exited {version.code}: {detail}. The disc command was not started."
+            self._finish_preflight(job_id, "failed", "REDUMPER_VERSION_FAILED", notice)
+            return self._error("UNSUPPORTED_REDUMPER_VERSION", notice)
         try:
             argv = disc_argv(binary, sg_node, str(output_dir), name, retries)
         except Exception as exc:  # noqa: BLE001 - policy refusal becomes a job failure
             self._finish_preflight(job_id, "failed", "OUTPUT_INVALID", str(exc))
             return self._error("OUTPUT_INVALID", str(exc))
         try:
-            handle = self.supervisor.spawn(argv, log_path, self._on_exit)
+            handle = self.supervisor.spawn(argv, log_path, self._on_exit, cwd=cwd, env=env)
         except Exception as exc:  # noqa: BLE001
             self._finish_preflight(job_id, "failed", "REDUMPER_MISSING", f"Redumper could not be started. {exc}")
             return self._error("REDUMPER_MISSING", f"Redumper could not be started. {exc}")
@@ -629,6 +658,44 @@ def _signal_group(pid: int, sig: signal.Signals) -> None:
             os.kill(pid, sig)
         except OSError:
             return
+
+
+def _host_launch(environ: dict[str, str], home: Path | None) -> tuple[dict[str, str], str | None]:
+    """Match a terminal session so a distrobox wrapper can enter its container."""
+    merged = dict(os.environ)
+    for key, value in environ.items():
+        if isinstance(value, str):
+            merged[key] = value
+    paths: list[str] = []
+    for item in ("/usr/local/sbin", "/usr/local/bin", "/usr/sbin", "/usr/bin", "/sbin", "/bin"):
+        if item not in paths:
+            paths.append(item)
+    for item in (merged.get("PATH") or "").split(os.pathsep):
+        if item and item not in paths:
+            paths.append(item)
+    merged["PATH"] = os.pathsep.join(paths)
+    cwd = _existing_directory(home)
+    if cwd is None and merged.get("HOME"):
+        cwd = _existing_directory(Path(merged["HOME"]))
+    if cwd is not None:
+        merged["HOME"] = cwd
+    if not merged.get("XDG_RUNTIME_DIR"):
+        runtime = Path(f"/run/user/{os.geteuid()}")
+        if runtime.is_dir():
+            merged["XDG_RUNTIME_DIR"] = str(runtime)
+    return merged, cwd
+
+
+def _existing_directory(path: Path | None) -> str | None:
+    if path is None:
+        return None
+    try:
+        resolved = path.resolve(strict=True)
+    except OSError:
+        return None
+    if resolved.is_dir():
+        return str(resolved)
+    return None
 
 
 def _first_line(text: str) -> str:

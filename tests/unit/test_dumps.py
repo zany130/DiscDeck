@@ -4,7 +4,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 
-from discdeck.commands import CommandResult, ScriptedRunner
+from discdeck.commands import CommandResult, CommandRunner, ScriptedRunner
 from discdeck.diagnostics import DiagnosticService
 from discdeck.dumps import disc_argv, process_start_token, validate_image_name, validate_output_root
 from discdeck.errors import UnsafeCommand
@@ -85,9 +85,11 @@ class FakeSupervisor:
         self.dumps: list[FakeDump] = []
         self.external: dict[int, str] = {}
 
-    def spawn(self, argv: list[str], log_path: Path, on_exit: object) -> FakeDump:
+    def spawn(self, argv: list[str], log_path: Path, on_exit: object, cwd: str | None = None, env: dict[str, str] | None = None) -> FakeDump:
         del on_exit
         log_path.parent.mkdir(parents=True, exist_ok=True)
+        self.cwd = cwd
+        self.env = env
         self.argv.append(list(argv))
         dump = FakeDump()
         self.dumps.append(dump)
@@ -120,6 +122,7 @@ class DumpTests(unittest.TestCase):
             (settings_dir / "settings.json").write_text(json.dumps(settings), encoding="utf-8")
         logs = root / "logs"
         logs.mkdir(parents=True, exist_ok=True)
+        (root / "home").mkdir(parents=True, exist_ok=True)
         version = [str(binary), "--version"]
         return DiagnosticService(
             environ={
@@ -157,6 +160,10 @@ class DumpTests(unittest.TestCase):
             drive = next(item for item in service.snapshot()["drives"] if item["block_node"] == "/dev/sr1")
             started = service.start_dump(drive["drive_id"], drive["generation"], "Demo_1", str(output))
             self.assertTrue(started["ok"], started)
+            self.assertEqual(service.dump_runner.ptys, [True])
+            self.assertEqual(service.dump_runner.cwds, [str((root / "home").resolve())])
+            self.assertIn("/usr/bin", (service.dump_runner.envs[0] or {})["PATH"])
+            self.assertEqual(supervisor.cwd, str((root / "home").resolve()))
             self.assertEqual(started["result"]["verification"], "unverified")
             self.assertNotIn("--overwrite", supervisor.argv[0])
             self.assertEqual(supervisor.argv[0][1], "disc")
@@ -362,8 +369,14 @@ class DumpTests(unittest.TestCase):
             bad_drive = next(item for item in failed.snapshot()["drives"] if item["block_node"] == "/dev/sr1")
             version_failed = failed.start_dump(bad_drive["drive_id"], bad_drive["generation"], "disc", str(root / "bad" / "output"))
             self.assertEqual(version_failed["code"], "UNSUPPORTED_REDUMPER_VERSION")
+            self.assertIn("exited 1: no", version_failed["message"])
             self.assertEqual(supervisor.argv, [])
             self.assertEqual(failed.dumps.public_jobs()[0]["state"], "failed")
+
+    def test_terminal_version_text_is_captured(self) -> None:
+        result = CommandRunner(policy=lambda argv: None)(["/bin/echo", "redumper (build: 772)"], timeout=5, pty=True)
+        self.assertEqual(result.code, 0)
+        self.assertIn("redumper (build: 772)", result.stdout)
 
     def test_retries_and_command_policy(self) -> None:
         with TemporaryDirectory() as temporary:
