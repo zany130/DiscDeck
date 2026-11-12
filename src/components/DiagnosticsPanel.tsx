@@ -20,6 +20,8 @@ export function DiagnosticsPanel({
   error,
   updateMessage,
   updateOfferLabel,
+  redumperMessage,
+  onUpdateRedumper,
   onCheckUpdate,
   onInstallUpdate,
   onRefresh,
@@ -46,6 +48,8 @@ export function DiagnosticsPanel({
   error: string | null;
   updateMessage: string | null;
   updateOfferLabel: string | null;
+  redumperMessage: string | null;
+  onUpdateRedumper: () => void;
   onCheckUpdate: () => void;
   onInstallUpdate: () => void;
   onRefresh: () => void;
@@ -78,9 +82,22 @@ export function DiagnosticsPanel({
       <PanelSection title="Dump">
         <PanelSectionRow>
           <div>
-            Dump uses Redumper on that drive's sg node. The disc must be unmounted. Output goes in a new folder. A finished command is not a verified dump. A container wrapper runs only when you start a dump.
+            {redumper?.build
+              ? `Redumper build ${redumper.build}${redumper.origin === "updated" ? ", from Update Redumper" : ", shipped with DiscDeck"}.`
+              : "The Redumper build shipped with DiscDeck is not available."}{" "}
+            Dumps use only that copy. A system or container install is not used. The disc must be unmounted, and a finished command is not a verified dump.
           </div>
         </PanelSectionRow>
+        <PanelSectionRow>
+          <ButtonItem layout="below" onClick={onUpdateRedumper} disabled={busy}>
+            Update Redumper
+          </ButtonItem>
+        </PanelSectionRow>
+        {redumperMessage ? (
+          <PanelSectionRow>
+            <div>{redumperMessage}</div>
+          </PanelSectionRow>
+        ) : null}
         <PanelSectionRow>
           <TextField label="Image name" value={imageName} disabled={busy} onChange={(event) => onImageName(event.target.value)} />
         </PanelSectionRow>
@@ -264,7 +281,8 @@ export function DiagnosticsPanel({
         </PanelSectionRow>
         <PanelSectionRow>
           <div>
-            Redumper: {redumper?.launch_kind ?? redumper?.status ?? "not collected"}; version {redumper?.version_status ?? "not collected"}; executed {redumper?.executed ? "yes" : "no"}
+            Redumper: {redumper?.build ? `build ${redumper.build}` : "missing"}
+            {redumper?.origin === "updated" ? " (updated)" : redumper?.origin === "bundled" ? " (shipped with DiscDeck)" : ""}; executed {redumper?.executed ? "yes" : "no"}
           </div>
         </PanelSectionRow>
         <PanelSectionRow>

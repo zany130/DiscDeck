@@ -288,7 +288,7 @@ class DumpJobs:
             return self._error("INSUFFICIENT_SPACE", f"The output folder has {free} bytes free. DiscDeck does not know the disc size and will not start below {MIN_FREE_BYTES} bytes.")
         binary = self._binary(snapshot)
         if binary is None:
-            return self._error("REDUMPER_MISSING", "No redumper executable was found.")
+            return self._error("REDUMPER_MISSING", "The Redumper build shipped with DiscDeck is not available. A system or container copy was not used.")
         described = snapshot["probes"]["redumper"]
         retries = _retries(snapshot)
         job_id = "job_" + uuid.uuid4().hex[:12]
@@ -527,8 +527,11 @@ class DumpJobs:
             return any(job["drive_id"] == drive_id and (job["state"] in ACTIVE_STATES or job.get("needs_ack")) for job in self._jobs)
 
     def _binary(self, snapshot: dict[str, Any]) -> str | None:
-        path = snapshot["probes"]["redumper"].get("path")
-        if isinstance(path, str) and path.startswith("/"):
+        probe = snapshot["probes"]["redumper"]
+        path = probe.get("path")
+        if probe.get("launch_kind") != "native_executable" or probe.get("origin") not in {"bundled", "updated"}:
+            return None
+        if isinstance(path, str) and path.startswith("/") and Path(path).is_file() and not Path(path).is_symlink():
             return path
         return None
 
@@ -681,7 +684,7 @@ def _signal_group(pid: int, sig: signal.Signals) -> None:
 
 
 def _host_launch(environ: dict[str, str], home: Path | None) -> tuple[dict[str, str], str | None]:
-    """Match a terminal session so a distrobox wrapper can enter its container."""
+    """Give the managed Redumper a normal home directory. The executable is never taken from PATH."""
     merged = dict(os.environ)
     for key, value in environ.items():
         if isinstance(value, str):

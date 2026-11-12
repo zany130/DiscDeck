@@ -1,3 +1,4 @@
+import json
 import stat
 import unittest
 from pathlib import Path
@@ -13,6 +14,7 @@ from tests.support.fixtures import (
     udisks_busctl_payload,
     write_cdemu_installation,
     write_host_sysfs,
+    write_managed_redumper,
     write_redumper_wrapper,
     write_steam_home,
 )
@@ -50,8 +52,20 @@ class DiagnosticSnapshotTests(unittest.TestCase):
             plugin = root / "plugin"
             plugin.mkdir()
             (plugin / "plugin.json").write_text('{"name":"DiscDeck","flags":["debug"]}\n', encoding="utf-8")
+            managed = write_managed_redumper(plugin)
             settings = root / "settings"
             settings.mkdir()
+            (settings / "settings.json").write_text(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "settings_revision": 1,
+                        "redumper_binary": str(tools / "redumper"),
+                        "modules": {},
+                    }
+                ),
+                encoding="utf-8",
+            )
             runner = ScriptedRunner(scripted_bus_responses(udisks_busctl_payload()))
             service = DiagnosticService(
                 environ={
@@ -108,6 +122,9 @@ class DiagnosticSnapshotTests(unittest.TestCase):
             bridge = [drive for drive in snapshot["drives"] if drive["shared_bridge"]]
             self.assertEqual(sorted(drive["lun"] for drive in bridge), [0, 1])
             self.assertEqual(snapshot["probes"]["redumper"]["version_status"], "not_executed")
+            self.assertEqual(snapshot["probes"]["redumper"]["origin"], "bundled")
+            self.assertEqual(snapshot["probes"]["redumper"]["build"], 772)
+            self.assertEqual(snapshot["probes"]["redumper"]["path"], str(managed))
             self.assertFalse(snapshot["probes"]["redumper"]["executed"])
             self.assertFalse(snapshot["probes"]["steam"]["shortcuts_read"])
             self.assertFalse(any(Path(call[0]).name in {"redumper", "cdemu", "mount", "eject", "steam"} for call in runner.calls))
@@ -146,8 +163,10 @@ class DiagnosticSnapshotTests(unittest.TestCase):
             sysfs = write_host_sysfs(root)
             tools = root / "bin"
             write_redumper_wrapper(tools)
+            plugin = root / "plugin"
+            write_managed_redumper(plugin)
             service = DiagnosticService(
-                environ={"PATH": str(tools)},
+                environ={"PATH": str(tools), "DECKY_PLUGIN_DIR": str(plugin)},
                 os_module=FakeOs(),
                 pwd_module=FakePwd(),
                 runner=ScriptedRunner(),

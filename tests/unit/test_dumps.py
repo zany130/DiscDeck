@@ -13,7 +13,14 @@ from discdeck.dumps import disc_argv, process_start_token, validate_image_name, 
 from discdeck.errors import UnsafeCommand
 from discdeck.physical import unmount_argv
 from discdeck.security import assert_dump_argv, assert_physical_udisks_argv, assert_readonly_argv
-from tests.support.fixtures import scripted_bus_responses, write_host_sysfs, write_native_redumper, write_redumper_wrapper
+from tests.support.fixtures import (
+    managed_redumper_manifest,
+    scripted_bus_responses,
+    write_host_sysfs,
+    write_managed_redumper,
+    write_native_redumper,
+    write_redumper_wrapper,
+)
 
 BLOCK = "/org/freedesktop/UDisks2/block_devices/sr1"
 DRIVE = "/org/freedesktop/UDisks2/drives/bridge_lun0"
@@ -126,11 +133,23 @@ class DumpTests(unittest.TestCase):
         logs = root / "logs"
         logs.mkdir(parents=True, exist_ok=True)
         (root / "home").mkdir(parents=True, exist_ok=True)
-        version = [str(binary), "--version"]
+        plugin = root / "plugin"
+        managed = plugin / "bin" / "redumper"
+        managed.parent.mkdir(parents=True, exist_ok=True)
+        payload = binary.read_bytes()
+        managed.write_bytes(payload)
+        managed.chmod(0o755)
+        (plugin / "bin" / "redumper.json").write_text(
+            json.dumps(managed_redumper_manifest(payload)) + "\n",
+            encoding="utf-8",
+        )
+        decoy = write_redumper_wrapper(root / "host-bin")
+        version = [str(managed), "--version"]
         return DiagnosticService(
             environ={
-                "PATH": str(binary.parent),
+                "PATH": str(decoy.parent),
                 "HOME": str(root / "home"),
+                "DECKY_PLUGIN_DIR": str(plugin),
                 "DECKY_PLUGIN_SETTINGS_DIR": str(settings_dir),
                 "DECKY_PLUGIN_LOG_DIR": str(logs),
             },
@@ -163,6 +182,8 @@ class DumpTests(unittest.TestCase):
             drive = next(item for item in service.snapshot()["drives"] if item["block_node"] == "/dev/sr1")
             started = service.start_dump(drive["drive_id"], drive["generation"], "Demo_1", str(output))
             self.assertTrue(started["ok"], started)
+            self.assertTrue(supervisor.argv[0][0].endswith("/plugin/bin/redumper"))
+            self.assertFalse(supervisor.argv[0][0].endswith("/host-bin/redumper"))
             self.assertEqual(service.dump_runner.ptys, [True])
             self.assertEqual(service.dump_runner.cwds, [str((root / "home").resolve())])
             self.assertIn("/usr/bin", (service.dump_runner.envs[0] or {})["PATH"])
@@ -184,23 +205,22 @@ class DumpTests(unittest.TestCase):
             self.assertIn("did not verify", str(job["message"]))
             self.assertNotIn(drive["drive_id"], service.physical.leases)
 
-    def test_wrapper_runs_only_for_the_explicit_dump(self) -> None:
+    def test_system_and_container_copies_are_not_used(self) -> None:
         with TemporaryDirectory() as temporary:
             root = Path(temporary)
             supervisor = FakeSupervisor()
             binary = write_redumper_wrapper(root / "bin")
             service = self._service(root, binary, supervisor)
-            self.assertEqual(service.snapshot()["probes"]["redumper"]["launch_kind"], "distrobox_wrapper")
+            self.assertEqual(service.snapshot()["probes"]["redumper"]["reason_code"], "REDUMPER_MISSING")
+            self.assertIsNone(service.snapshot()["probes"]["redumper"]["path"])
             self.assertFalse(service.snapshot()["probes"]["redumper"]["executed"])
-            self.assertEqual(service.runner.calls, [call for call in service.runner.calls if Path(call[0]).name != "redumper"])
             output = root / "output"
             output.mkdir()
             drive = next(item for item in service.snapshot()["drives"] if item["block_node"] == "/dev/sr1")
             started = service.start_dump(drive["drive_id"], drive["generation"], "disc", str(output))
-            self.assertTrue(started["ok"], started)
-            self.assertEqual(started["result"]["launch_kind"], "distrobox_wrapper")
-            self.assertEqual(supervisor.argv[0][0], str(binary))
-            self.assertEqual(supervisor.argv[0][1], "disc")
+            self.assertEqual(started["code"], "REDUMPER_MISSING")
+            self.assertEqual(supervisor.argv, [])
+            self.assertEqual(service.dump_runner.calls, [])
 
     def test_refusals_do_not_spawn_redumper(self) -> None:
         with TemporaryDirectory() as temporary:
@@ -345,11 +365,14 @@ class DumpTests(unittest.TestCase):
             drive = next(item for item in disabled.snapshot()["drives"] if item["block_node"] == "/dev/sr1")
             refused = disabled.start_dump(drive["drive_id"], drive["generation"], "disc", str(output))
             self.assertEqual(refused["code"], "MODULE_DISABLED")
-            version = [str(binary), "--version"]
+            plugin = root / "bad-plugin"
+            managed = write_managed_redumper(plugin)
+            version = [str(managed), "--version"]
             failed = DiagnosticService(
                 environ={
                     "PATH": str(binary.parent),
                     "HOME": str(root / "home"),
+                    "DECKY_PLUGIN_DIR": str(plugin),
                     "DECKY_PLUGIN_SETTINGS_DIR": str(root / "bad-settings"),
                     "DECKY_PLUGIN_LOG_DIR": str(root / "bad-logs"),
                 },

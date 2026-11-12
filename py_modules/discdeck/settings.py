@@ -63,6 +63,7 @@ def load_settings(path: Path | None) -> dict[str, Any]:
     if not isinstance(revision, int) or revision < 0:
         revision = 0
     merged["settings_revision"] = revision
+    # Older files may name a host path. DiscDeck does not execute it.
     binary = parsed.get("redumper_binary")
     if isinstance(binary, str) and binary.startswith("/"):
         merged["redumper_binary"] = binary

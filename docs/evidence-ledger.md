@@ -117,7 +117,7 @@ At about 8:30 PM ET the user reported that the read-only toast, a readable and n
 
 ## Phase 3 Redumper preservation
 
-A dump starts only after an explicit request. DiscDeck selects `/dev/sgN` from the drive's sysfs identity, unmounts a DiscDeck-owned filesystem first, and leaves a foreign mount in place. The command is `redumper disc --drive=/dev/sgN --image-path=... --image-name=...`. Retries default to 0. Output is a new directory. A container wrapper is executed only for that request. On restart, a still-running process becomes `orphaned_running` and blocks that drive until the process is gone and the user releases it. Exit code 0 is recorded as `completed_warnings` with `verification: unverified`. `hardware_validated` stays false. This has not been run on the gaming PC.
+A dump starts only after an explicit request. DiscDeck selects `/dev/sgN` from the drive's sysfs identity, unmounts a DiscDeck-owned filesystem first, and leaves a foreign mount in place. The command is `redumper disc --drive=/dev/sgN --image-path=... --image-name=...`, and the executable is the official build shipped in the plugin ZIP. Update Redumper can save a newer official Linux x64 release; that copy is removed when the plugin is uninstalled. A system install and a container wrapper are not used. Retries default to 0. Output is a new directory. On restart, a still-running process becomes `orphaned_running` and blocks that drive until the process is gone and the user releases it. Exit code 0 is recorded as `completed_warnings` with `verification: unverified`. `hardware_validated` stays false. This has not been run on the gaming PC.
 
 ## Gate ledger
 
@@ -137,6 +137,6 @@ A dump starts only after an explicit request. DiscDeck selects `/dev/sgN` from t
 - No `root` flag and no privileged helper.
 - No automatic `modprobe`, service start, mount, eject, dump, or Steam edit.
 - Runtime durability is reported as `untested`. The ISO ownership journal is stored under `state/` in the plugin settings directory because that durability was not measured.
-- Redumper version is not read when the file is a distrobox wrapper.
+- Redumper runs only from the copy shipped with DiscDeck, or a newer official build installed by Update Redumper. A distrobox wrapper is not executed.
 - CDEmu methods are not called while the daemon is inactive.
 - `Optical=false` does not override sysfs type 5 or an `sr` node name.

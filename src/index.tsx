@@ -2,7 +2,7 @@ import { addEventListener, definePlugin, openFilePicker, removeEventListener, to
 import { staticClasses } from "@decky/ui";
 import { useEffect, useState } from "react";
 import { FaCompactDisc } from "react-icons/fa";
-import { acknowledgeDump, cancelDump, checkUpdate, ejectDrive, emitProbeEvent, forceStopDump, getSnapshot, mountFilesystem, mountIso, ping, readRedumperVersion, startDump, unmountFilesystem, unmountIso } from "./api/bridge";
+import { acknowledgeDump, cancelDump, checkUpdate, ejectDrive, emitProbeEvent, forceStopDump, getSnapshot, mountFilesystem, mountIso, ping, readRedumperVersion, startDump, unmountFilesystem, unmountIso, updateRedumper } from "./api/bridge";
 import { requestDevelopmentInstall } from "./api/installUpdate";
 import { subscribeChanged } from "./api/events";
 import type { DiagnosticSnapshot } from "./api/types";
@@ -19,6 +19,7 @@ function Content() {
   const [snapshot, setSnapshot] = useState<DiagnosticSnapshot | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [updateMessage, setUpdateMessage] = useState<string | null>(null);
+  const [redumperMessage, setRedumperMessage] = useState<string | null>(null);
   const [updateOffer, setUpdateOffer] = useState<UpdateOffer | null>(null);
   const [busy, setBusy] = useState(false);
   const [pendingEjectId, setPendingEjectId] = useState<string | null>(null);
@@ -69,6 +70,27 @@ function Content() {
       error={error}
       updateMessage={updateMessage}
       updateOfferLabel={updateOffer?.label ?? null}
+      redumperMessage={redumperMessage}
+      onUpdateRedumper={() => {
+        setBusy(true);
+        void updateRedumper()
+          .then((response) => {
+            const notice = response.ok
+              ? String(response.result.message ?? "Redumper was checked.")
+              : `${response.code}: ${response.message}`;
+            setRedumperMessage(notice);
+            toaster.toast({ title: "Redumper", body: notice });
+          })
+          .catch((caught: unknown) => {
+            const notice = caught instanceof Error ? caught.message : "The Redumper update failed.";
+            setRedumperMessage(notice);
+            toaster.toast({ title: "Redumper", body: notice });
+          })
+          .finally(() => {
+            setBusy(false);
+            refresh();
+          });
+      }}
       onCheckUpdate={() => {
         setBusy(true);
         void checkUpdate()

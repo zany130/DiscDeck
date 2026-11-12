@@ -101,6 +101,10 @@ export interface DiagnosticSnapshot {
       version?: string | null;
       version_status?: string;
       launch_kind?: string;
+      origin?: "bundled" | "updated" | null;
+      build?: number | null;
+      bundled_build?: number | null;
+      updated_build?: number | null;
       executed?: boolean;
       message?: string;
       reason_code?: string;

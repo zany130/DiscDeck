@@ -6,6 +6,7 @@ inactive services. They do not claim those operations succeeded.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -87,11 +88,47 @@ def write_redumper_wrapper(directory: Path) -> Path:
     return path
 
 
+def linux_x64_elf_fixture() -> bytes:
+    header = bytearray(64)
+    header[0:4] = b"\x7fELF"
+    header[4] = 2
+    header[5] = 1
+    header[6] = 1
+    header[16] = 2
+    header[18:20] = (62).to_bytes(2, "little")
+    header[20:24] = (1).to_bytes(4, "little")
+    return bytes(header) + b"-fixture-not-a-real-binary"
+
+
 def write_native_redumper(directory: Path) -> Path:
     directory.mkdir(parents=True, exist_ok=True)
     path = directory / "redumper"
-    path.write_bytes(b"\x7fELF-fixture-not-a-real-binary")
+    path.write_bytes(linux_x64_elf_fixture())
     path.chmod(0o755)
+    return path
+
+
+def managed_redumper_manifest(binary: bytes, *, build: int = 772, origin: str = "bundled") -> dict[str, object]:
+    return {
+        "schema_version": 1,
+        "repository": "superg/redumper",
+        "tag": f"b{build}",
+        "build": build,
+        "origin": origin,
+        "asset": f"redumper-b{build}-linux-x64.zip",
+        "zip_sha256": "ab" * 32,
+        "binary_sha256": hashlib.sha256(binary).hexdigest(),
+    }
+
+
+def write_managed_redumper(parent: Path, *, build: int = 772, origin: str = "bundled") -> Path:
+    directory = parent / ("bin" if origin == "bundled" else "redumper")
+    path = write_native_redumper(directory)
+    binary = path.read_bytes()
+    (directory / "redumper.json").write_text(
+        json.dumps(managed_redumper_manifest(binary, build=build, origin=origin), indent=2) + "\n",
+        encoding="utf-8",
+    )
     return path
 
 

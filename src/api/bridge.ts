@@ -7,6 +7,7 @@ export const probeModule = callable<[moduleId: string], Envelope<{ module: Diagn
 export const ping = callable<[], Envelope<{ pong: boolean; phase: string; hardware_validated: boolean }>>("ping");
 export const emitProbeEvent = callable<[], Envelope<{ epoch: string; revision: number; domain: string }>>("emit_probe_event");
 export const readRedumperVersion = callable<[allowUntestedWrapper?: boolean], Envelope<Record<string, unknown>>>("read_redumper_version");
+export const updateRedumper = callable<[], Envelope<Record<string, unknown>>>("update_redumper");
 export const checkUpdate = callable<[], Envelope<Record<string, unknown>>>("check_update");
 export const mountFilesystem = callable<[driveId: string, generation: number, mediaGeneration: number], Envelope<Record<string, unknown>>>("mount_filesystem");
 export const unmountFilesystem = callable<[driveId: string, generation: number], Envelope<Record<string, unknown>>>("unmount_filesystem");

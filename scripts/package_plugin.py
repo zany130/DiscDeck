@@ -13,11 +13,18 @@ import argparse
 import json
 import shutil
 import subprocess
+import sys
 import zipfile
 from pathlib import Path
 
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "py_modules"))
+
+from discdeck.redumper_bundle import RedumperInstallError, fetch_pinned_release  # noqa: E402
+
 ROOT_FILES = ("LICENSE", "main.py", "package.json", "plugin.json", "README.md")
 ZIP_MODE_FILE = 0o100644
+ZIP_MODE_EXECUTABLE = 0o100755
 ZIP_MODE_DIR = 0o040755
 
 
@@ -43,7 +50,14 @@ def short_commit(commit: str | None) -> str:
     return commit[:7]
 
 
-def stage_plugin(source: Path, stage: Path, commit: str | None) -> None:
+def stage_redumper(stage: Path, binary: bytes, manifest: dict[str, object]) -> None:
+    destination = stage / "bin"
+    destination.mkdir(parents=True, exist_ok=True)
+    (destination / "redumper").write_bytes(binary)
+    (destination / "redumper.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+
+
+def stage_plugin(source: Path, stage: Path, commit: str | None, redumper: tuple[bytes, dict[str, object]] | None = None) -> None:
     if stage.exists():
         shutil.rmtree(stage)
     stage.mkdir(parents=True)
@@ -69,6 +83,8 @@ def stage_plugin(source: Path, stage: Path, commit: str | None) -> None:
         "hardware_validated": False,
     }
     info_path.write_text(json.dumps(info, indent=2) + "\n", encoding="utf-8")
+    if redumper is not None:
+        stage_redumper(stage, redumper[0], redumper[1])
 
 
 def write_zip(stage: Path, destination: Path, folder_name: str) -> None:
@@ -82,7 +98,8 @@ def write_zip(stage: Path, destination: Path, folder_name: str) -> None:
             if path.is_dir():
                 _writedir(archive, arcname + "/")
             else:
-                _writefile(archive, arcname, path.read_bytes())
+                mode = ZIP_MODE_EXECUTABLE if relative == "bin/redumper" else ZIP_MODE_FILE
+                _writefile(archive, arcname, path.read_bytes(), mode)
         _writedir(archive, f"{folder_name}/")
 
 
@@ -101,10 +118,10 @@ def _copy_tree(source: Path, destination: Path) -> None:
             shutil.copy2(path, target)
 
 
-def _writefile(archive: zipfile.ZipFile, arcname: str, data: bytes) -> None:
+def _writefile(archive: zipfile.ZipFile, arcname: str, data: bytes, mode: int = ZIP_MODE_FILE) -> None:
     info = zipfile.ZipInfo(arcname)
     info.compress_type = zipfile.ZIP_DEFLATED
-    info.external_attr = ZIP_MODE_FILE << 16
+    info.external_attr = mode << 16
     archive.writestr(info, data)
 
 
@@ -124,7 +141,11 @@ def main() -> None:
     plugin = json.loads((source / "plugin.json").read_text(encoding="utf-8"))
     folder_name = plugin["name"]
     stage = args.output / "stage" / folder_name
-    stage_plugin(source, stage, commit)
+    try:
+        redumper = fetch_pinned_release()
+    except RedumperInstallError as exc:
+        raise SystemExit(f"Could not bundle Redumper: {exc}") from exc
+    stage_plugin(source, stage, commit, redumper)
     filename = f"{folder_name}-phase0-dev-{short_commit(commit)}.zip"
     destination = args.output / filename
     write_zip(stage, destination, folder_name)

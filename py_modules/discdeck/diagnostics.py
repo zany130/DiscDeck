@@ -19,6 +19,7 @@ from discdeck.dumps import DumpJobs
 from discdeck.images import ImageLibrary
 from discdeck.models import DEFAULT_MODULE_ENABLED, envelope_error, envelope_ok, module_status
 from discdeck.physical import GenerationTracker, PhysicalOperations
+from discdeck.redumper_bundle import RedumperInstallError, install_latest_redumper
 from discdeck.runtime import probe_runtime, read_build_info
 from discdeck.updates import UpdateError, check_development_update
 from discdeck.security import assert_dump_argv, assert_physical_udisks_argv
@@ -29,7 +30,7 @@ LIMITATIONS = (
     "A filesystem image is mounted only after an ISO is picked. It is not a virtual disc, and CDEmu is not used.",
     "A readable inventory is not a passed hardware gate. hardware_validated stays false.",
     "Runtime-directory durability across Decky restarts was not measured.",
-    "Redumper disc runs only after an explicit dump. A container wrapper is executed only for that dump. Exit code 0 is not a verified dump.",
+    "Redumper disc runs only after an explicit dump, and only with the build shipped in the plugin or a newer official build saved by Update Redumper. Exit code 0 is not a verified dump.",
     "An inactive CDEmu daemon is not activated and its device methods are not called.",
     "Steam shortcuts and Proton prefixes are not read or modified.",
 )
@@ -54,6 +55,7 @@ class DiagnosticService:
         getfacl: Any = None,
         stat_fn: Any = None,
         update_opener: Any = None,
+        redumper_opener: Any = None,
         dump_runner: Any | None = None,
         dump_supervisor: Any | None = None,
         disk_free: Any | None = None,
@@ -80,6 +82,7 @@ class DiagnosticService:
         self.getfacl = getfacl
         self.stat_fn = stat_fn
         self.update_opener = update_opener
+        self.redumper_opener = redumper_opener
 
     def snapshot(self) -> dict[str, Any]:
         checked_at = _now()
@@ -101,7 +104,7 @@ class DiagnosticService:
         if self.stat_fn is not None:
             permission_kwargs["stat_fn"] = self.stat_fn
         permissions = inspect_nodes(_permission_nodes(devices["drives"], self.dev_root), **permission_kwargs)
-        redumper = discover_redumper(self.environ, settings_state["settings"].get("redumper_binary"))
+        redumper = discover_redumper(self.environ)
         cdemu = probe_cdemu(self.runner, root=self.root, sysfs_root=self.sysfs_root, dev_root=self.dev_root)
         steam = probe_steam(self.home, self.environ, self.root)
         modules = _modules(
@@ -177,18 +180,27 @@ class DiagnosticService:
             self.snapshot()
         return {"epoch": self.epoch, "revision": self.revision, "domain": "diagnostics"}
 
-    def redumper_version_envelope(self, allow_untested_wrapper: bool = False) -> dict[str, Any]:
-        settings_state = load_settings(_settings_path(self.environ))
-        configured = settings_state["settings"].get("redumper_binary")
-        current = discover_redumper(self.environ, configured if isinstance(configured, str) else None)
+    def redumper_version_envelope(self) -> dict[str, Any]:
+        current = discover_redumper(self.environ)
         path = current.get("path")
         if not path:
             self.revision += 1
             return envelope_ok(current, self.revision, self.epoch)
         try:
-            result = read_redumper_version(path, self.runner, allow_untested_wrapper=allow_untested_wrapper)
+            result = read_redumper_version(path, self.runner)
         except Exception as exc:  # noqa: BLE001
             return envelope_error("INTERNAL_ERROR", str(exc), retryable=False, revision=self.revision, epoch=self.epoch)
+        self.revision += 1
+        return envelope_ok(result, self.revision, self.epoch)
+
+    def update_redumper(self) -> dict[str, Any]:
+        kwargs: dict[str, Any] = {}
+        if self.redumper_opener is not None:
+            kwargs["opener"] = self.redumper_opener
+        try:
+            result = install_latest_redumper(self.environ, **kwargs)
+        except RedumperInstallError as exc:
+            return envelope_error("NOT_READY", str(exc), retryable=True, revision=self.revision, epoch=self.epoch)
         self.revision += 1
         return envelope_ok(result, self.revision, self.epoch)
 

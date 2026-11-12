@@ -6,6 +6,7 @@ import decky
 from discdeck.diagnostics import DiagnosticService
 from discdeck.lifecycle import Lifecycle
 from discdeck.models import envelope_error, envelope_ok
+from discdeck.redumper_bundle import remove_updated_copy
 from discdeck.runtime import read_build_info
 
 
@@ -39,8 +40,11 @@ class Plugin:
         decky.logger.info("DiscDeck unloaded without ejecting media or stopping foreign processes.")
 
     async def _uninstall(self) -> None:
+        removed = remove_updated_copy(self.service.environ)
         await self.lifecycle.uninstall()
         self.service.lifecycle_phase = self.lifecycle.phase
+        if removed:
+            decky.logger.info("Removed the optional Redumper update. Other DiscDeck settings were left in place.")
         decky.logger.info("DiscDeck uninstalled. User data, mounts, shortcuts, and prefixes were left in place.")
 
     async def get_snapshot(self) -> dict:
@@ -71,7 +75,16 @@ class Plugin:
         return self.service.check_update()
 
     async def read_redumper_version(self, allow_untested_wrapper: bool = False) -> dict:
-        return self.service.redumper_version_envelope(bool(allow_untested_wrapper))
+        del allow_untested_wrapper
+        return self.service.redumper_version_envelope()
+
+    async def update_redumper(self) -> dict:
+        result = self.service.update_redumper()
+        await decky.emit(
+            "discdeck:changed",
+            {"epoch": self.service.epoch, "revision": self.service.revision, "domain": "redumper"},
+        )
+        return result
 
     async def mount_filesystem(self, drive_id: str, generation: int, media_generation: int) -> dict:
         result = self.service.mount_drive(drive_id, int(generation), int(media_generation))

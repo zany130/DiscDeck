@@ -35,7 +35,7 @@ The VS Code deploy example under `.vscode/defsettings.json` still contains the t
 
 ## Packaging
 
-The ZIP root is `DiscDeck/` and contains `dist/index.js`, `plugin.json`, `package.json`, `main.py`, `LICENSE`, `README.md`, and `py_modules/`. Files under `defaults/` are flattened into that root, matching Decky CLI 0.0.8. The packaged `build_info.json` records the git commit and sets `hardware_validated` to false.
+The ZIP root is `DiscDeck/` and contains `dist/index.js`, `plugin.json`, `package.json`, `main.py`, `LICENSE`, `README.md`, `bin/redumper`, and `py_modules/`. Packaging downloads the pinned Redumper Linux x64 release, checks its SHA-256, and stores that executable at `bin/redumper`. It does not copy a Redumper binary from the build machine. Files under `defaults/` are flattened into that root, matching Decky CLI 0.0.8. The packaged `build_info.json` records the git commit and sets `hardware_validated` to false.
 
 ## CI
 
