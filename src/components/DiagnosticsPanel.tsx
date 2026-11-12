@@ -85,7 +85,11 @@ export function DiagnosticsPanel({
           <TextField label="Image name" value={imageName} disabled={busy} onChange={(event) => onImageName(event.target.value)} />
         </PanelSectionRow>
         <PanelSectionRow>
-          <div>{outputRoot ? `Output folder ${outputRoot}` : "Choose a folder. DiscDeck creates a new directory inside it."}</div>
+          <div>
+            {outputRoot
+              ? `Output folder ${outputRoot}`
+              : "Open the folder, then press Select. A highlighted row only opens the next folder."}
+          </div>
         </PanelSectionRow>
         <PanelSectionRow>
           <ButtonItem layout="below" onClick={onChooseDumpFolder} disabled={busy}>

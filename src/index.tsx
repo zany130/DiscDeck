@@ -8,7 +8,7 @@ import { subscribeChanged } from "./api/events";
 import type { DiagnosticSnapshot } from "./api/types";
 import { DiagnosticsPanel } from "./components/DiagnosticsPanel";
 import { actionNotice } from "./state/actionNotice";
-import { chosenDumpFolder, dumpFolderRequest } from "./state/dumpRequest";
+import { chosenDumpFolder, dumpFolderRequest, publishDumpFolder, rejectedDumpFolderReason, rememberedDumpFolder, subscribeDumpFolder } from "./state/dumpRequest";
 import { chosenIsoPath, isoPickerRequest } from "./state/isoPicker";
 import { acceptSnapshot } from "./state/snapshotReducer";
 import { updateNotice, type UpdateOffer } from "./state/updateNotice";
@@ -23,7 +23,7 @@ function Content() {
   const [busy, setBusy] = useState(false);
   const [pendingEjectId, setPendingEjectId] = useState<string | null>(null);
   const [imageName, setImageName] = useState("disc");
-  const [outputRoot, setOutputRoot] = useState<string | null>(null);
+  const [outputRoot, setOutputRoot] = useState<string | null>(rememberedDumpFolder);
   const [pendingForceJobId, setPendingForceJobId] = useState<string | null>(null);
   const visible = useQuickAccessVisible();
 
@@ -53,6 +53,8 @@ function Content() {
       refreshers.delete(refresh);
     };
   }, []);
+
+  useEffect(() => subscribeDumpFolder(setOutputRoot), []);
 
   useEffect(() => {
     if (visible) {
@@ -243,12 +245,18 @@ function Content() {
         )
           .then((picked) => {
             const folder = chosenDumpFolder(picked);
-            if (folder) {
-              setOutputRoot(folder);
+            if (!folder) {
+              const notice = rejectedDumpFolderReason(picked);
+              setError(notice);
+              toaster.toast({ title: "DiscDeck dump", body: notice });
+              return;
             }
+            publishDumpFolder(folder);
+            toaster.toast({ title: "DiscDeck dump", body: `Dump folder set to ${folder}.` });
           })
           .catch((caught: unknown) => {
-            const notice = caught instanceof Error ? caught.message : "The folder request failed.";
+            const raw = caught instanceof Error ? caught.message : typeof caught === "string" ? caught : "The folder request failed.";
+            const notice = raw === "User canceled" ? rejectedDumpFolderReason(null) : raw;
             setError(notice);
             toaster.toast({ title: "DiscDeck dump", body: notice });
           })
