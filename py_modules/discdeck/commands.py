@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-import pty
 import select
 import subprocess
 import time
@@ -99,9 +98,75 @@ class ScriptedRunner:
         return match
 
 
+def open_pty_pair() -> tuple[int, int] | None:
+    """Open a terminal without importing the stdlib pty module.
+
+    Decky's Python does not include the termios extension, and ``import pty``
+    loads termios. libc openpty does not need that module.
+    """
+    try:
+        import ctypes
+        import ctypes.util
+    except ImportError:
+        return None
+    names: list[str] = []
+    for library in ("util", "c"):
+        found = ctypes.util.find_library(library)
+        if found and found not in names:
+            names.append(found)
+    for fallback in ("libutil.so.1", "libc.so.6"):
+        if fallback not in names:
+            names.append(fallback)
+    for name in names:
+        try:
+            library = ctypes.CDLL(name, use_errno=True)
+            opener = library.openpty
+        except (OSError, AttributeError):
+            continue
+        master = ctypes.c_int()
+        slave = ctypes.c_int()
+        opener.argtypes = [
+            ctypes.POINTER(ctypes.c_int),
+            ctypes.POINTER(ctypes.c_int),
+            ctypes.c_void_p,
+            ctypes.c_void_p,
+            ctypes.c_void_p,
+        ]
+        opener.restype = ctypes.c_int
+        if opener(ctypes.byref(master), ctypes.byref(slave), None, None, None) != 0:
+            continue
+        return master.value, slave.value
+    return None
+
+
 def _capture_pty(argv: list[str], timeout: float, env: dict[str, str] | None, cwd: str | None) -> CommandResult:
     """Run one command on a terminal so a distrobox wrapper behaves as it does in a shell."""
-    master, slave = pty.openpty()
+    pair = open_pty_pair()
+    if pair is None:
+        try:
+            completed = subprocess.run(
+                argv,
+                shell=False,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                env=env,
+                cwd=cwd,
+                stdin=subprocess.DEVNULL,
+            )
+        except (FileNotFoundError, OSError) as exc:
+            return CommandResult(argv, 127, "", str(exc)[:200])
+        except subprocess.TimeoutExpired as exc:
+            stdout = exc.stdout or ""
+            stderr = exc.stderr or "timeout"
+            if isinstance(stdout, bytes):
+                stdout = stdout.decode("utf-8", "replace")
+            if isinstance(stderr, bytes):
+                stderr = stderr.decode("utf-8", "replace")
+            return CommandResult(argv, 124, stdout, stderr)
+        return CommandResult(argv, completed.returncode, completed.stdout, completed.stderr)
+    master, slave = pair
     try:
         try:
             process = subprocess.Popen(

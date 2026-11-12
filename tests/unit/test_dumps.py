@@ -1,4 +1,7 @@
 import json
+import os
+import subprocess
+import sys
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -372,6 +375,32 @@ class DumpTests(unittest.TestCase):
             self.assertIn("exited 1: no", version_failed["message"])
             self.assertEqual(supervisor.argv, [])
             self.assertEqual(failed.dumps.public_jobs()[0]["state"], "failed")
+
+    def test_plugin_imports_without_the_termios_module(self) -> None:
+        completed = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                "import builtins\n"
+                "real = builtins.__import__\n"
+                "def guarded(name, globals=None, locals=None, fromlist=(), level=0):\n"
+                "    if name in {'pty', 'tty', 'termios'}:\n"
+                "        raise ModuleNotFoundError(name)\n"
+                "    return real(name, globals, locals, fromlist, level)\n"
+                "builtins.__import__ = guarded\n"
+                "import discdeck.commands\n"
+                "import discdeck.dumps\n"
+                "pair = discdeck.commands.open_pty_pair()\n"
+                "assert pair is not None\n"
+                "import os\n"
+                "os.close(pair[0]); os.close(pair[1])\n",
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+            env={**os.environ, "PYTHONPATH": "py_modules"},
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
 
     def test_terminal_version_text_is_captured(self) -> None:
         result = CommandRunner(policy=lambda argv: None)(["/bin/echo", "redumper (build: 772)"], timeout=5, pty=True)

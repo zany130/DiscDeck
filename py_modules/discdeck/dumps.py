@@ -10,7 +10,6 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import pty
 import re
 import select
 import shutil
@@ -21,6 +20,7 @@ import uuid
 from pathlib import Path
 from typing import Any, Callable
 
+from discdeck.commands import open_pty_pair
 from discdeck.models import envelope_error, envelope_ok
 from discdeck.security import assert_dump_argv
 
@@ -123,24 +123,44 @@ class HostSupervisor:
         assert_dump_argv(argv)
         log_path.parent.mkdir(parents=True, exist_ok=True)
         log_handle = log_path.open("ab", buffering=0)
-        master, slave = pty.openpty()
+        pair = open_pty_pair()
+        slave: int | None = None
         try:
-            process = subprocess.Popen(
-                argv,
-                stdin=slave,
-                stdout=slave,
-                stderr=slave,
-                cwd=cwd,
-                env=env,
-                start_new_session=True,
-                close_fds=True,
-            )
+            if pair is None:
+                process = subprocess.Popen(
+                    argv,
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    cwd=cwd,
+                    env=env,
+                    start_new_session=True,
+                    close_fds=True,
+                )
+                output = process.stdout
+                if output is None:
+                    raise OSError("Redumper output could not be captured.")
+                master = output.fileno()
+            else:
+                master, slave = pair
+                process = subprocess.Popen(
+                    argv,
+                    stdin=slave,
+                    stdout=slave,
+                    stderr=slave,
+                    cwd=cwd,
+                    env=env,
+                    start_new_session=True,
+                    close_fds=True,
+                )
         except Exception:
-            os.close(master)
-            os.close(slave)
+            if pair is not None:
+                os.close(pair[0])
+                os.close(pair[1])
             log_handle.close()
             raise
-        os.close(slave)
+        if slave is not None:
+            os.close(slave)
         dump = HostDump(process)
 
         def drain() -> None:
