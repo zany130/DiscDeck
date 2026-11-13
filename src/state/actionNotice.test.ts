@@ -27,6 +27,17 @@ describe("actionNotice", () => {
     );
   });
 
+  it("says a CDEmu load is not a verified launch", () => {
+    expect(
+      actionNotice({
+        ok: true,
+        result: { action: "load_virtual", device_number: 0, sr_device: "/dev/sr4", via: "started" },
+        epoch: "epoch",
+        revision: 9,
+      }),
+    ).toBe("Loaded into CDEmu device 0 at /dev/sr4. This is not a verified launch.");
+  });
+
   it("names an accepted eject", () => {
     expect(actionNotice({ ok: true, result: { action: "eject", via: "direct" }, epoch: "epoch", revision: 5 })).toBe(
       "UDisks2 accepted eject.",

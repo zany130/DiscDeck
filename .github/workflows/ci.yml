@@ -8,6 +8,7 @@ on:
       - cursor/phase0-foundation-beb3
       - cursor/phase2-iso-library-beb3
       - cursor/phase3-redumper-beb3
+      - cursor/phase4-cdemu-beb3
 
 permissions:
   contents: read
@@ -104,7 +105,8 @@ jobs:
         env:
           ALLOW: ${{ vars.DISCDECK_PUBLISH_BRANCHES }}
         run: |
-          branches="${ALLOW:-main,cursor/phase0-foundation-beb3,cursor/phase2-iso-library-beb3,cursor/phase3-redumper-beb3}"
+          default="main,cursor/phase0-foundation-beb3,cursor/phase2-iso-library-beb3,cursor/phase3-redumper-beb3,cursor/phase4-cdemu-beb3"
+          branches="${default}${ALLOW:+,${ALLOW}}"
           case ",${branches}," in
             *",${GITHUB_REF_NAME}",*) echo "publish=true" >> "$GITHUB_OUTPUT" ;;
             *) echo "publish=false" >> "$GITHUB_OUTPUT" ;;

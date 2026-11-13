@@ -54,6 +54,16 @@ export interface FilesystemImage {
   hardware_validated?: boolean;
 }
 
+export interface VirtualSlot {
+  slot_id: string;
+  device_number: number;
+  image_path: string;
+  sr_device?: string | null;
+  sg_device?: string | null;
+  state?: string;
+  hardware_validated?: boolean;
+}
+
 export interface DumpJob {
   job_id: string;
   state: string;
@@ -80,7 +90,7 @@ export interface DiagnosticSnapshot {
   settings_revision: number;
   modules: ModuleStatus[];
   drives: DriveObservation[];
-  virtual_slots: unknown[];
+  virtual_slots: VirtualSlot[];
   jobs: DumpJob[];
   identity: {
     effective_user?: string | null;

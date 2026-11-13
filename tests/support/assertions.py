@@ -5,7 +5,7 @@ from typing import Any
 
 def assert_phase0_unproven(snapshot: dict[str, Any]) -> None:
     assert snapshot["hardware_validated"] is False
-    assert snapshot["phase"] == "3"
+    assert snapshot["phase"] == "4"
     assert snapshot["jobs"] == []
     assert snapshot["virtual_slots"] == []
     for module in snapshot["modules"]:

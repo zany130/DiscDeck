@@ -1,8 +1,8 @@
 """VHBA and CDEmu presence checks that do not activate the daemon.
 
-An installed but inactive user service is neither missing nor ready. Version
-and slot methods are not called unless a caller later proves the daemon is
-already active, and Phase 0 still does not load images.
+An installed but inactive user service is neither missing nor ready. This
+probe does not start the daemon or load an image. An explicit virtual-disc
+request is the only path that does.
 """
 
 from __future__ import annotations
@@ -47,11 +47,11 @@ def probe_cdemu(
     elif installed and not active:
         status = "untested"
         reason = "DAEMON_INACTIVE"
-        message = "CDEmu files are installed, but the daemon was not running. Phase 0 did not activate it or load an image."
+        message = "CDEmu files are installed, but the daemon was not running. A refresh does not start it or load an image."
     elif active:
         status = "untested"
         reason = "DAEMON_INTERFACE_NOT_VALIDATED"
-        message = "A CDEmu bus owner was visible. Phase 0 did not call device methods or load an image."
+        message = "A CDEmu bus owner was visible. A refresh does not load an image."
     else:
         status = "untested"
         reason = "CDEMU_UNVERIFIED"
