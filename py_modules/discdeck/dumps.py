@@ -17,6 +17,7 @@ import signal
 import subprocess
 import threading
 import uuid
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable
 
@@ -28,6 +29,7 @@ MIN_FREE_BYTES = 64 * 1024 * 1024
 MAX_LOG_BYTES = 1_048_576
 ACTIVE_STATES = {"queued", "preflight", "running", "cancel_requested", "orphaned_running"}
 _IMAGE_NAME_OK = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
+_DUMPJOB_DIR = re.compile(r"^dumpjob_[0-9]{4}-[0-9]{2}-[0-9]{2}_[0-9]{6}(?:_[0-9]+)?$")
 
 
 def validate_image_name(raw: str) -> str:
@@ -291,12 +293,18 @@ class DumpJobs:
             return self._error("REDUMPER_MISSING", "The Redumper build shipped with DiscDeck is not available. A system or container copy was not used.")
         described = snapshot["probes"]["redumper"]
         retries = _retries(snapshot)
+        iso_destination = root / f"{name}.iso"
+        if iso_destination.exists() or iso_destination.is_symlink():
+            return self._error(
+                "OUTPUT_INVALID",
+                f"{name}.iso is already in that folder. Pick another image name or folder. Nothing was overwritten.",
+            )
         job_id = "job_" + uuid.uuid4().hex[:12]
-        output_dir = root / job_id
         try:
+            output_dir = _dumpjob_dir(root)
             output_dir.mkdir()
         except OSError as exc:
-            return self._error("OUTPUT_INVALID", f"The new output folder could not be created. {exc}")
+            return self._error("OUTPUT_INVALID", f"The dump folder could not be created. {exc}")
         log_path = self._log_path(job_id)
         if log_path is None:
             output_dir.rmdir()
@@ -422,6 +430,7 @@ class DumpJobs:
             self._touch_locked(job)
             self._store_locked()
             self._sync_leases_locked()
+            _remove_empty_dumpjob(job)
 
     def _observe(self, job: dict[str, Any], present: set[str] | None) -> bool:
         if job["state"] not in ACTIVE_STATES and not job.get("needs_ack"):
@@ -478,16 +487,35 @@ class DumpJobs:
         job["exit_code"] = code
         job["verification"] = "unverified"
         job["needs_ack"] = False if watched else True
+        folder = Path(str(job.get("output_dir") or "")).name or "the dump folder"
         if job["state"] == "cancel_requested" or code < 0:
             job["state"] = "interrupted"
-            job["message"] = "The dump stopped before it finished. The output folder was kept and was not verified."
+            job["message"] = f"The dump stopped before it finished. The files stayed in {folder} and were not verified."
             return
         if code == 0:
             job["state"] = "completed_warnings"
-            job["message"] = "Redumper exited 0. DiscDeck did not verify the files."
+            moved = _move_finished_iso(job)
+            image = job.get("image_name") or "image"
+            if moved == "moved":
+                job["message"] = (
+                    f"{image}.iso was moved into the folder you chose. Logs and the other files stayed in {folder}. "
+                    "DiscDeck did not verify the files."
+                )
+            elif moved == "exists":
+                job["message"] = (
+                    f"{image}.iso is already in the folder you chose, so it was not replaced. "
+                    f"The new files stayed in {folder}."
+                )
+            elif moved == "missing":
+                job["message"] = (
+                    f"Redumper exited 0 and did not write {image}.iso. The other files stayed in {folder}. "
+                    "DiscDeck did not verify the files."
+                )
+            else:
+                job["message"] = f"Redumper exited 0. {image}.iso could not be moved. The files stayed in {folder}."
             return
         job["state"] = "failed"
-        job["message"] = f"Redumper exited {code}. The output folder was kept and was not verified."
+        job["message"] = f"Redumper exited {code}. The files stayed in {folder} and were not verified."
 
     def _process_status_locked(self, job: dict[str, Any]) -> tuple[str, int | None]:
         pid = job.get("pid")
@@ -613,6 +641,62 @@ def _retries(snapshot: dict[str, Any]) -> int:
     return 0
 
 
+def _dumpjob_dir(root: Path, moment: datetime | None = None) -> Path:
+    stamp = (moment or datetime.now().astimezone()).strftime("%Y-%m-%d_%H%M%S")
+    candidate = root / f"dumpjob_{stamp}"
+    if not candidate.exists():
+        return candidate
+    for suffix in range(2, 1000):
+        candidate = root / f"dumpjob_{stamp}_{suffix}"
+        if not candidate.exists():
+            return candidate
+    raise OSError("A dump folder name could not be chosen.")
+
+
+def _move_finished_iso(job: dict[str, Any]) -> str:
+    """Move the finished ISO into the chosen folder. Logs and other files stay in the dumpjob folder."""
+    staging = Path(str(job.get("output_dir") or ""))
+    image_name = job.get("image_name")
+    if not isinstance(image_name, str) or _DUMPJOB_DIR.fullmatch(staging.name) is None:
+        return "failed"
+    source = staging / f"{image_name}.iso"
+    destination = staging.parent / source.name
+    if destination == source or not source.is_file() or source.is_symlink():
+        return "missing" if destination != source else "failed"
+    if destination.exists() or destination.is_symlink():
+        return "exists"
+    try:
+        os.link(source, destination)
+    except FileExistsError:
+        return "exists"
+    except OSError:
+        if destination.exists() or destination.is_symlink():
+            return "exists"
+        try:
+            os.replace(source, destination)
+        except OSError:
+            return "failed"
+        job["iso_path"] = str(destination)
+        return "moved"
+    try:
+        source.unlink()
+    except OSError:
+        destination.unlink(missing_ok=True)
+        return "failed"
+    job["iso_path"] = str(destination)
+    return "moved"
+
+
+def _remove_empty_dumpjob(job: dict[str, Any]) -> None:
+    path = Path(str(job.get("output_dir") or ""))
+    if _DUMPJOB_DIR.fullmatch(path.name) is None:
+        return
+    try:
+        path.rmdir()
+    except OSError:
+        return
+
+
 def _new_job(
     job_id: str,
     drive: dict[str, Any],
@@ -661,6 +745,7 @@ def _public(job: dict[str, Any]) -> dict[str, Any]:
         "generic_scsi_node": job.get("generic_scsi_node"),
         "image_name": job.get("image_name"),
         "output_dir": job.get("output_dir"),
+        "iso_path": job.get("iso_path"),
         "verification": "unverified",
         "message": job.get("message"),
         "exit_code": job.get("exit_code"),

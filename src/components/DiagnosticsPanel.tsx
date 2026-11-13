@@ -85,7 +85,7 @@ export function DiagnosticsPanel({
             {redumper?.build
               ? `Redumper build ${redumper.build}${redumper.origin === "updated" ? ", from Update Redumper" : ", shipped with DiscDeck"}.`
               : "The Redumper build shipped with DiscDeck is not available."}{" "}
-            Dumps use only that copy. A system or container install is not used. The disc must be unmounted, and a finished command is not a verified dump.
+            Dumps use only that copy. A system or container install is not used. The disc must be unmounted. While a dump runs, Redumper writes into a dumpjob folder named with the date and time. When it finishes, the .iso moves into the folder you chose. Logs and the other files stay in that dumpjob folder. A finished command is not a verified dump.
           </div>
         </PanelSectionRow>
         <PanelSectionRow>
@@ -141,7 +141,8 @@ export function DiagnosticsPanel({
           snapshot?.jobs.map((job) => (
             <PanelSectionRow key={job.job_id}>
               <div>
-                {job.state} · {job.image_name} · {job.generic_scsi_node ?? "no sg node"} · {job.output_dir} · {job.verification ?? "unverified"} · {job.message}
+                {job.state} · {job.image_name} · {job.generic_scsi_node ?? "no sg node"} · {job.output_dir}
+                {job.iso_path ? ` · ISO ${job.iso_path}` : ""} · {job.verification ?? "unverified"} · {job.message}
               </div>
               {job.state === "running" || job.state === "orphaned_running" ? (
                 <ButtonItem layout="below" onClick={() => onCancelDump(job.job_id)} disabled={busy}>

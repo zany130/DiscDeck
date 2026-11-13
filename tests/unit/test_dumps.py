@@ -194,6 +194,8 @@ class DumpTests(unittest.TestCase):
             self.assertEqual(supervisor.argv[0][2], "--drive=/dev/sg2")
             self.assertTrue(supervisor.argv[0][3].startswith("--image-path="))
             self.assertEqual(supervisor.argv[0][4], "--image-name=Demo_1")
+            self.assertTrue(Path(started["result"]["output_dir"]).name.startswith("dumpjob_"))
+            self.assertEqual(Path(supervisor.argv[0][3].removeprefix("--image-path=")).name, Path(started["result"]["output_dir"]).name)
             self.assertFalse(any(call[1:] == ["disc"] or (len(call) > 1 and call[1] == "disc") for call in service.runner.calls))
             blocked = service.mount_drive(drive["drive_id"], drive["generation"], drive["media_generation"])
             self.assertEqual(blocked["code"], "DRIVE_BUSY")
@@ -204,6 +206,38 @@ class DumpTests(unittest.TestCase):
             self.assertEqual(job["verification"], "unverified")
             self.assertIn("did not verify", str(job["message"]))
             self.assertNotIn(drive["drive_id"], service.physical.leases)
+
+    def test_finished_iso_moves_to_the_chosen_folder_and_other_files_stay(self) -> None:
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            supervisor = FakeSupervisor()
+            binary = write_native_redumper(root / "bin")
+            service = self._service(root, binary, supervisor)
+            output = root / "output"
+            output.mkdir()
+            (output / "Demo_1.iso").write_bytes(b"already")
+            drive = next(item for item in service.snapshot()["drives"] if item["block_node"] == "/dev/sr1")
+            blocked = service.start_dump(drive["drive_id"], drive["generation"], "Demo_1", str(output))
+            self.assertEqual(blocked["code"], "OUTPUT_INVALID")
+            self.assertEqual(supervisor.argv, [])
+            (output / "Demo_1.iso").unlink()
+            started = service.start_dump(drive["drive_id"], drive["generation"], "Demo_1", str(output))
+            self.assertTrue(started["ok"], started)
+            staging = Path(started["result"]["output_dir"])
+            self.assertTrue(staging.name.startswith("dumpjob_"))
+            (staging / "Demo_1.iso").write_bytes(b"iso-bytes")
+            (staging / "Demo_1.log").write_text("log\n", encoding="utf-8")
+            (staging / "Demo_1.cue").write_text("cue\n", encoding="utf-8")
+            supervisor.dumps[0].code = 0
+            service.dumps.reconcile(service.snapshot()["drives"])
+            self.assertEqual((output / "Demo_1.iso").read_bytes(), b"iso-bytes")
+            self.assertFalse((staging / "Demo_1.iso").exists())
+            self.assertEqual((staging / "Demo_1.log").read_text(encoding="utf-8"), "log\n")
+            self.assertEqual((staging / "Demo_1.cue").read_text(encoding="utf-8"), "cue\n")
+            self.assertFalse((output / "Demo_1.log").exists())
+            finished = service.dumps.public_jobs()[0]
+            self.assertEqual(finished["iso_path"], str(output / "Demo_1.iso"))
+            self.assertIn("moved", str(finished["message"]))
 
     def test_system_and_container_copies_are_not_used(self) -> None:
         with TemporaryDirectory() as temporary:

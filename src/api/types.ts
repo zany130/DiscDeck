@@ -62,6 +62,7 @@ export interface DumpJob {
   generic_scsi_node?: string | null;
   image_name?: string;
   output_dir?: string;
+  iso_path?: string | null;
   verification?: string;
   message?: string;
   exit_code?: number | null;
