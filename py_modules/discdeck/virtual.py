@@ -33,33 +33,36 @@ _SG = re.compile(r"^/dev/sg[0-9]+$")
 
 
 def start_daemon_argv() -> list[str]:
-    return _wrap(["systemctl", "--user", "start", "cdemu-daemon.service"])
+    return _checked(["systemctl", "--user", "start", "cdemu-daemon.service"])
 
 
 def number_argv() -> list[str]:
-    return _wrap([*_JSON, "GetNumberOfDevices"])
+    return _checked([*_JSON, "GetNumberOfDevices"])
 
 
 def status_argv(device: int) -> list[str]:
-    return _wrap([*_JSON, "DeviceGetStatus", "i", str(device)])
+    return _checked([*_JSON, "DeviceGetStatus", "i", str(device)])
 
 
 def mapping_argv(device: int) -> list[str]:
-    return _wrap([*_JSON, "DeviceGetMapping", "i", str(device)])
+    return _checked([*_JSON, "DeviceGetMapping", "i", str(device)])
 
 
 def load_argv(device: int, image: str) -> list[str]:
-    return _wrap([*_CALL, "DeviceLoad", "isa{sv}", str(device), "1", image, "0"])
+    return _checked([*_CALL, "DeviceLoad", "isa{sv}", str(device), "1", image, "0"])
 
 
 def unload_argv(device: int) -> list[str]:
-    return _wrap([*_CALL, "DeviceUnload", "i", str(device)])
+    return _checked([*_CALL, "DeviceUnload", "i", str(device)])
 
 
-def _wrap(argv: list[str]) -> list[str]:
-    wrapped = [*_WRAP, *argv]
-    assert_virtual_argv(wrapped)
-    return wrapped
+def _checked(argv: list[str]) -> list[str]:
+    assert_virtual_argv(argv)
+    return argv
+
+
+def _session_wrap(argv: list[str]) -> list[str]:
+    return _checked([*_WRAP, *argv])
 
 
 def validate_disc_image(raw: str) -> Path:
@@ -167,7 +170,8 @@ class VirtualDiscs:
             started = True
         count, number_result = self._device_count()
         if count is None:
-            detail = _detail(number_result)
+            detail = _detail(number_result) or f"exit {getattr(number_result, 'code', 'unknown')}"
+            self._log(f"CDEmu device count failed ({getattr(number_result, 'code', None)}): {detail}")
             return self._error("NOT_READY", f"CDEmu did not report its devices. {detail}".strip())
         if count < 1:
             return self._error("NOT_READY", "CDEmu reported no virtual devices. Nothing was loaded.")
@@ -276,17 +280,18 @@ class VirtualDiscs:
 
     def _device_count(self) -> tuple[int | None, Any]:
         last = None
-        for attempt in range(3):
-            last = self._run(number_argv(), 10)
+        for attempt in range(8):
+            last = self._run(number_argv(), 10, expect_body=True)
             count = _number(last)
             if count is not None:
                 return count, last
-            if attempt < 2:
-                time.sleep(0.4)
+            if attempt == 7 or not _daemon_not_ready(last):
+                return None, last
+            time.sleep(0.5)
         return None, last
 
     def _status(self, device: int) -> tuple[str, list[str]]:
-        result = self._run(status_argv(device), 10)
+        result = self._run(status_argv(device), 10, expect_body=True)
         parsed = _json_data(result)
         if result.code != 0 or not isinstance(parsed, list) or len(parsed) < 2 or not isinstance(parsed[0], bool):
             return "unavailable", []
@@ -296,7 +301,7 @@ class VirtualDiscs:
         return "empty", files
 
     def _mapping(self, device: int) -> tuple[str | None, str | None]:
-        result = self._run(mapping_argv(device), 10)
+        result = self._run(mapping_argv(device), 10, expect_body=True)
         parsed = _json_data(result)
         if result.code != 0 or not isinstance(parsed, list) or len(parsed) < 2:
             return None, None
@@ -310,12 +315,19 @@ class VirtualDiscs:
         modules = load_settings(path)["settings"]["modules"]
         return modules.get("virtual.cdemu") is not False
 
-    def _run(self, argv: list[str], timeout: float) -> Any:
+    def _run(self, argv: list[str], timeout: float, *, expect_body: bool = False) -> Any:
+        """Call the user bus directly. A session unit is only the fallback when that bus is unreachable."""
         env = session_environment(self.service.environ, self._euid())
-        result = self.service.virtual_runner(argv, timeout=timeout, env=env)
-        if result.code == 127 and argv[: len(_WRAP)] == _WRAP:
-            return self.service.virtual_runner(argv[len(_WRAP) :], timeout=timeout, env=env)
-        return result
+        direct = argv[len(_WRAP) :] if argv[: len(_WRAP)] == _WRAP else list(argv)
+        first = self.service.virtual_runner(direct, timeout=timeout, env=env)
+        if _good(first, expect_body=expect_body):
+            return first
+        if not _worth_session_retry(first, expect_body=expect_body):
+            return first
+        second = self.service.virtual_runner(_session_wrap(direct), timeout=timeout, env=env)
+        if _good(second, expect_body=expect_body):
+            return second
+        return first if _detail(first) else second
 
     def _euid(self) -> int:
         getter = getattr(self.service.os_module, "geteuid", None)
@@ -423,10 +435,44 @@ def _json_data(result: Any) -> Any:
 
 
 def _number(result: Any) -> int | None:
+    if getattr(result, "code", 1) != 0:
+        return None
     data = _json_data(result)
-    if result.code == 0 and isinstance(data, int) and not isinstance(data, bool) and data >= 0:
+    if isinstance(data, bool):
+        return None
+    if isinstance(data, int) and data >= 0:
         return data
+    if isinstance(data, list) and len(data) == 1 and isinstance(data[0], int) and not isinstance(data[0], bool) and data[0] >= 0:
+        return data[0]
+    text = str(getattr(result, "stdout", "")).strip()
+    match = re.fullmatch(r"(?:i\s+)?([0-9]+)", text)
+    if match:
+        return int(match.group(1))
     return None
+
+
+def _good(result: Any, *, expect_body: bool) -> bool:
+    if getattr(result, "code", 1) != 0:
+        return False
+    if expect_body and not str(getattr(result, "stdout", "")).strip():
+        return False
+    return True
+
+
+def _worth_session_retry(result: Any, *, expect_body: bool) -> bool:
+    if getattr(result, "code", 1) == 127:
+        return True
+    if expect_body and getattr(result, "code", 1) == 0 and not str(getattr(result, "stdout", "")).strip():
+        return True
+    text = _detail(result).lower()
+    return "failed to connect to bus" in text or "no medium found" in text or "no such file or directory" in text
+
+
+def _daemon_not_ready(result: Any) -> bool:
+    if getattr(result, "code", 1) == 0 and not str(getattr(result, "stdout", "")).strip():
+        return True
+    text = _detail(result).lower()
+    return any(phrase in text for phrase in ("no such name", "not provided", "not activatable", "no owner", "service unknown", "was not provided"))
 
 
 def _detail(result: Any) -> str:

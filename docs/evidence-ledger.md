@@ -121,7 +121,7 @@ A dump starts only after an explicit request. DiscDeck selects `/dev/sgN` from t
 
 ## Phase 4 CDEmu virtual discs
 
-An explicit load accepts one absolute `.cue` or `.iso` with no symlink component. A cue's `FILE` targets must exist beside it and must not use `..`. The call is `DeviceLoad` on the first empty CDEmu device, through the user bus, with an empty parameter list. If the daemon is inactive and VHBA is already loaded, that request starts `cdemu-daemon.service` for the current user. A refresh does not start it. DiscDeck does not run `modprobe` or the `cdemu` client. Unload runs only when the live device still lists the recorded path. `hardware_validated` stays false. This has not been run on the gaming PC.
+An explicit load accepts one absolute `.cue` or `.iso` with no symlink component. A cue's `FILE` targets must exist beside it and must not use `..`. The call is `DeviceLoad` on the first empty CDEmu device, through the user bus, with an empty parameter list. If the daemon is inactive and VHBA is already loaded, that request starts `cdemu-daemon.service` for the current user. A refresh does not start it. DiscDeck does not run `modprobe` or the `cdemu` client. Unload runs only when the live device still lists the recorded path. `hardware_validated` stays false. On 2026-11-12 at about 9:23 PM ET version 0.4.0 loaded and the user reported `NOT_READY` because CDEmu did not report its devices. The plugin log did not include the bus reply. The device query now uses the same direct user-bus call as the presence probe. This load has not succeeded on the gaming PC.
 
 ## Gate ledger
 
