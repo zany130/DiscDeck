@@ -227,14 +227,24 @@ class DumpTests(unittest.TestCase):
             self.assertTrue(staging.name.startswith("dumpjob_"))
             (staging / "Demo_1.iso").write_bytes(b"iso-bytes")
             (staging / "Demo_1.log").write_text("log\n", encoding="utf-8")
-            (staging / "Demo_1.cue").write_text("cue\n", encoding="utf-8")
+            (staging / "Demo_1.scram").write_bytes(b"scram")
+            (staging / "Demo_1.cue").write_text(
+                'FILE "Demo_1 (Track 1).bin" BINARY\n  TRACK 01 MODE1/2352\n    INDEX 01 00:00:00\nFILE "../Demo_1.log" BINARY\n',
+                encoding="utf-8",
+            )
+            (staging / "Demo_1 (Track 1).bin").write_bytes(b"bin-bytes")
             supervisor.dumps[0].code = 0
             service.dumps.reconcile(service.snapshot()["drives"])
             self.assertEqual((output / "Demo_1.iso").read_bytes(), b"iso-bytes")
+            self.assertIn('FILE "Demo_1 (Track 1).bin" BINARY', (output / "Demo_1.cue").read_text(encoding="utf-8"))
+            self.assertEqual((output / "Demo_1 (Track 1).bin").read_bytes(), b"bin-bytes")
             self.assertFalse((staging / "Demo_1.iso").exists())
+            self.assertFalse((staging / "Demo_1.cue").exists())
+            self.assertFalse((staging / "Demo_1 (Track 1).bin").exists())
             self.assertEqual((staging / "Demo_1.log").read_text(encoding="utf-8"), "log\n")
-            self.assertEqual((staging / "Demo_1.cue").read_text(encoding="utf-8"), "cue\n")
+            self.assertEqual((staging / "Demo_1.scram").read_bytes(), b"scram")
             self.assertFalse((output / "Demo_1.log").exists())
+            self.assertFalse((output / "Demo_1.scram").exists())
             finished = service.dumps.public_jobs()[0]
             self.assertEqual(finished["iso_path"], str(output / "Demo_1.iso"))
             self.assertIn("moved", str(finished["message"]))

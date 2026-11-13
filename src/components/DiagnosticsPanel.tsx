@@ -85,7 +85,7 @@ export function DiagnosticsPanel({
             {redumper?.build
               ? `Redumper build ${redumper.build}${redumper.origin === "updated" ? ", from Update Redumper" : ", shipped with DiscDeck"}.`
               : "The Redumper build shipped with DiscDeck is not available."}{" "}
-            Dumps use only that copy. A system or container install is not used. The disc must be unmounted. While a dump runs, Redumper writes into a dumpjob folder named with the date and time. When it finishes, the .iso moves into the folder you chose. Logs and the other files stay in that dumpjob folder. A finished command is not a verified dump.
+            Dumps use only that copy. A system or container install is not used. The disc must be unmounted. While a dump runs, Redumper writes into a dumpjob folder named with the date and time. When it finishes, the .iso and .cue move into the folder you chose, along with the track files that cue names. Logs and the other files stay in that dumpjob folder. A finished command is not a verified dump.
           </div>
         </PanelSectionRow>
         <PanelSectionRow>

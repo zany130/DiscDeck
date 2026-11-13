@@ -30,6 +30,7 @@ MAX_LOG_BYTES = 1_048_576
 ACTIVE_STATES = {"queued", "preflight", "running", "cancel_requested", "orphaned_running"}
 _IMAGE_NAME_OK = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 _DUMPJOB_DIR = re.compile(r"^dumpjob_[0-9]{4}-[0-9]{2}-[0-9]{2}_[0-9]{6}(?:_[0-9]+)?$")
+_CUE_FILE = re.compile(r'^\s*FILE\s+(?:"([^"\r\n]+)"|([^\s"\r\n]+))\s+\S+', re.IGNORECASE)
 
 
 def validate_image_name(raw: str) -> str:
@@ -293,11 +294,14 @@ class DumpJobs:
             return self._error("REDUMPER_MISSING", "The Redumper build shipped with DiscDeck is not available. A system or container copy was not used.")
         described = snapshot["probes"]["redumper"]
         retries = _retries(snapshot)
-        iso_destination = root / f"{name}.iso"
-        if iso_destination.exists() or iso_destination.is_symlink():
+        blocking = next(
+            (path.name for suffix in (".iso", ".cue") if (path := root / f"{name}{suffix}").exists() or path.is_symlink()),
+            None,
+        )
+        if blocking is not None:
             return self._error(
                 "OUTPUT_INVALID",
-                f"{name}.iso is already in that folder. Pick another image name or folder. Nothing was overwritten.",
+                f"{blocking} is already in that folder. Pick another image name or folder. Nothing was overwritten.",
             )
         job_id = "job_" + uuid.uuid4().hex[:12]
         try:
@@ -494,25 +498,27 @@ class DumpJobs:
             return
         if code == 0:
             job["state"] = "completed_warnings"
-            moved = _move_finished_iso(job)
+            moved = _move_finished_dump(job)
             image = job.get("image_name") or "image"
+            moved_names = job.get("moved_files") if isinstance(job.get("moved_files"), list) else []
+            shown = ", ".join(str(item) for item in moved_names) or f"{image}.iso"
             if moved == "moved":
                 job["message"] = (
-                    f"{image}.iso was moved into the folder you chose. Logs and the other files stayed in {folder}. "
+                    f"{shown} moved into the folder you chose. Logs and the other files stayed in {folder}. "
                     "DiscDeck did not verify the files."
                 )
             elif moved == "exists":
                 job["message"] = (
-                    f"{image}.iso is already in the folder you chose, so it was not replaced. "
+                    f"A dump file is already in the folder you chose, so nothing was replaced. "
                     f"The new files stayed in {folder}."
                 )
             elif moved == "missing":
                 job["message"] = (
-                    f"Redumper exited 0 and did not write {image}.iso. The other files stayed in {folder}. "
+                    f"Redumper exited 0 and did not write {image}.iso or {image}.cue. The other files stayed in {folder}. "
                     "DiscDeck did not verify the files."
                 )
             else:
-                job["message"] = f"Redumper exited 0. {image}.iso could not be moved. The files stayed in {folder}."
+                job["message"] = f"Redumper exited 0. The dump files could not be moved. They stayed in {folder}."
             return
         job["state"] = "failed"
         job["message"] = f"Redumper exited {code}. The files stayed in {folder} and were not verified."
@@ -653,37 +659,82 @@ def _dumpjob_dir(root: Path, moment: datetime | None = None) -> Path:
     raise OSError("A dump folder name could not be chosen.")
 
 
-def _move_finished_iso(job: dict[str, Any]) -> str:
-    """Move the finished ISO into the chosen folder. Logs and other files stay in the dumpjob folder."""
+def _move_finished_dump(job: dict[str, Any]) -> str:
+    """Move the ISO, the CUE, and the track files that cue names. Logs stay in the dumpjob folder."""
     staging = Path(str(job.get("output_dir") or ""))
     image_name = job.get("image_name")
     if not isinstance(image_name, str) or _DUMPJOB_DIR.fullmatch(staging.name) is None:
         return "failed"
-    source = staging / f"{image_name}.iso"
-    destination = staging.parent / source.name
-    if destination == source or not source.is_file() or source.is_symlink():
-        return "missing" if destination != source else "failed"
-    if destination.exists() or destination.is_symlink():
+    names = _finished_dump_names(staging, image_name)
+    if not names:
+        return "missing"
+    if any((staging.parent / name).exists() or (staging.parent / name).is_symlink() for name in names):
         return "exists"
+    for name in names:
+        moved = _move_one(staging / name, staging.parent / name)
+        if moved != "moved":
+            return moved
+    iso = staging.parent / f"{image_name}.iso"
+    if iso.is_file():
+        job["iso_path"] = str(iso)
+    job["moved_files"] = names
+    return "moved"
+
+
+def _finished_dump_names(staging: Path, image_name: str) -> list[str]:
+    names: list[str] = []
+    cue = staging / f"{image_name}.cue"
+    if _plain_file(cue):
+        names.append(cue.name)
+        for referenced in _cue_basenames(cue):
+            if referenced not in names and _plain_file(staging / referenced):
+                names.append(referenced)
+    iso = staging / f"{image_name}.iso"
+    if _plain_file(iso) and iso.name not in names:
+        names.insert(0, iso.name)
+    return names
+
+
+def _cue_basenames(path: Path) -> list[str]:
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return []
+    names: list[str] = []
+    for line in text[:1_048_576].splitlines():
+        match = _CUE_FILE.match(line)
+        if match is None:
+            continue
+        raw = match.group(1) if match.group(1) is not None else match.group(2)
+        if raw in {"", ".", ".."} or "/" in raw or "\\" in raw or Path(raw).name != raw:
+            continue
+        if raw not in names:
+            names.append(raw)
+    return names
+
+
+def _plain_file(path: Path) -> bool:
+    return path.is_file() and not path.is_symlink()
+
+
+def _move_one(source: Path, destination: Path) -> str:
+    if destination.exists() or destination.is_symlink() or not _plain_file(source):
+        return "exists" if destination.exists() or destination.is_symlink() else "failed"
     try:
         os.link(source, destination)
     except FileExistsError:
         return "exists"
     except OSError:
-        if destination.exists() or destination.is_symlink():
-            return "exists"
         try:
             os.replace(source, destination)
         except OSError:
             return "failed"
-        job["iso_path"] = str(destination)
         return "moved"
     try:
         source.unlink()
     except OSError:
         destination.unlink(missing_ok=True)
         return "failed"
-    job["iso_path"] = str(destination)
     return "moved"
 
 
