@@ -54,6 +54,23 @@ export interface FilesystemImage {
   hardware_validated?: boolean;
 }
 
+export interface DumpJob {
+  job_id: string;
+  state: string;
+  drive_id: string;
+  block_node?: string | null;
+  generic_scsi_node?: string | null;
+  image_name?: string;
+  output_dir?: string;
+  iso_path?: string | null;
+  verification?: string;
+  message?: string;
+  exit_code?: number | null;
+  launch_kind?: string | null;
+  needs_ack?: boolean;
+  hardware_validated?: boolean;
+}
+
 export interface DiagnosticSnapshot {
   epoch: string;
   revision: number;
@@ -64,7 +81,7 @@ export interface DiagnosticSnapshot {
   modules: ModuleStatus[];
   drives: DriveObservation[];
   virtual_slots: unknown[];
-  jobs: unknown[];
+  jobs: DumpJob[];
   identity: {
     effective_user?: string | null;
     effective_uid?: number | null;
@@ -85,6 +102,10 @@ export interface DiagnosticSnapshot {
       version?: string | null;
       version_status?: string;
       launch_kind?: string;
+      origin?: "bundled" | "updated" | null;
+      build?: number | null;
+      bundled_build?: number | null;
+      updated_build?: number | null;
       executed?: boolean;
       message?: string;
       reason_code?: string;

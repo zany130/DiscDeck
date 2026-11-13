@@ -1,5 +1,6 @@
-import { ButtonItem, PanelSection, PanelSectionRow } from "@decky/ui";
-import type { DiagnosticSnapshot } from "../api/types";
+import { ButtonItem, PanelSection, PanelSectionRow, TextField } from "@decky/ui";
+import type { DiagnosticSnapshot, DriveObservation } from "../api/types";
+import { dumpOffer } from "../state/dumpOffer";
 import { versionLabel } from "../state/updateNotice";
 import { DependencyStatus } from "./DependencyStatus";
 
@@ -19,6 +20,8 @@ export function DiagnosticsPanel({
   error,
   updateMessage,
   updateOfferLabel,
+  redumperMessage,
+  onUpdateRedumper,
   onCheckUpdate,
   onInstallUpdate,
   onRefresh,
@@ -30,12 +33,23 @@ export function DiagnosticsPanel({
   onEject,
   onPickIso,
   onUnmountIso,
+  imageName,
+  onImageName,
+  outputRoot,
+  pendingForceJobId,
+  onChooseDumpFolder,
+  onDump,
+  onCancelDump,
+  onForceDump,
+  onAcknowledgeDump,
 }: {
   snapshot: DiagnosticSnapshot | null;
   busy: boolean;
   error: string | null;
   updateMessage: string | null;
   updateOfferLabel: string | null;
+  redumperMessage: string | null;
+  onUpdateRedumper: () => void;
   onCheckUpdate: () => void;
   onInstallUpdate: () => void;
   onRefresh: () => void;
@@ -47,17 +61,112 @@ export function DiagnosticsPanel({
   onEject: (driveId: string, generation: number) => void;
   onPickIso: () => void;
   onUnmountIso: (imageId: string) => void;
+  imageName: string;
+  onImageName: (value: string) => void;
+  outputRoot: string | null;
+  pendingForceJobId: string | null;
+  onChooseDumpFolder: () => void;
+  onDump: (driveId: string, generation: number) => void;
+  onCancelDump: (jobId: string) => void;
+  onForceDump: (jobId: string) => void;
+  onAcknowledgeDump: (jobId: string) => void;
 }) {
   const identity = snapshot?.identity;
   const redumper = snapshot?.probes?.redumper;
   const cdemu = snapshot?.probes?.cdemu;
   const steam = snapshot?.probes?.steam;
+  const drives = snapshot?.drives ?? [];
+  const dumpTargets: Array<DriveObservation | null> = drives.length > 0 ? drives : [null];
   return (
     <>
-      <PanelSection title="Phase 0 diagnostics">
+      <PanelSection title="Dump">
         <PanelSectionRow>
           <div>
-            Refresh only reads inventory. Mount, unmount, eject, and an ISO mount run when you press those buttons, and the result stays in the message below.
+            {redumper?.build
+              ? `Redumper build ${redumper.build}${redumper.origin === "updated" ? ", from Update Redumper" : ", shipped with DiscDeck"}.`
+              : "The Redumper build shipped with DiscDeck is not available."}{" "}
+            Dumps use only that copy. A system or container install is not used. The disc must be unmounted. While a dump runs, Redumper writes into a dumpjob folder named with the date and time. When it finishes, the .iso and .cue move into the folder you chose, along with the track files that cue names. Logs and the other files stay in that dumpjob folder. A finished command is not a verified dump.
+          </div>
+        </PanelSectionRow>
+        <PanelSectionRow>
+          <ButtonItem layout="below" onClick={onUpdateRedumper} disabled={busy}>
+            Update Redumper
+          </ButtonItem>
+        </PanelSectionRow>
+        {redumperMessage ? (
+          <PanelSectionRow>
+            <div>{redumperMessage}</div>
+          </PanelSectionRow>
+        ) : null}
+        <PanelSectionRow>
+          <TextField label="Image name" value={imageName} disabled={busy} onChange={(event) => onImageName(event.target.value)} />
+        </PanelSectionRow>
+        <PanelSectionRow>
+          <div>
+            {outputRoot
+              ? `Output folder ${outputRoot}`
+              : "Open the folder, then press Select. A highlighted row only opens the next folder."}
+          </div>
+        </PanelSectionRow>
+        <PanelSectionRow>
+          <ButtonItem layout="below" onClick={onChooseDumpFolder} disabled={busy}>
+            Choose dump folder
+          </ButtonItem>
+        </PanelSectionRow>
+        {dumpTargets.map((drive) => {
+          const offer = dumpOffer(drive, outputRoot);
+          const key = drive ? `dump-${drive.drive_id}` : "dump-none";
+          return (
+            <PanelSectionRow key={key}>
+              <ButtonItem
+                layout="below"
+                onClick={() => {
+                  if (drive) {
+                    onDump(drive.drive_id, drive.generation ?? 1);
+                  }
+                }}
+                disabled={busy || !offer.enabled}
+              >
+                {offer.label}
+              </ButtonItem>
+              {offer.reason ? <div>{offer.reason}</div> : null}
+            </PanelSectionRow>
+          );
+        })}
+        {(snapshot?.jobs.length ?? 0) === 0 ? (
+          <PanelSectionRow>
+            <div>No dump is recorded.</div>
+          </PanelSectionRow>
+        ) : (
+          snapshot?.jobs.map((job) => (
+            <PanelSectionRow key={job.job_id}>
+              <div>
+                {job.state} · {job.image_name} · {job.generic_scsi_node ?? "no sg node"} · {job.output_dir}
+                {job.iso_path ? ` · ISO ${job.iso_path}` : ""} · {job.verification ?? "unverified"} · {job.message}
+              </div>
+              {job.state === "running" || job.state === "orphaned_running" ? (
+                <ButtonItem layout="below" onClick={() => onCancelDump(job.job_id)} disabled={busy}>
+                  Cancel dump
+                </ButtonItem>
+              ) : null}
+              {job.state === "cancel_requested" ? (
+                <ButtonItem layout="below" onClick={() => onForceDump(job.job_id)} disabled={busy}>
+                  {pendingForceJobId === job.job_id ? "Confirm force stop" : "Force stop"}
+                </ButtonItem>
+              ) : null}
+              {job.needs_ack ? (
+                <ButtonItem layout="below" onClick={() => onAcknowledgeDump(job.job_id)} disabled={busy}>
+                  Dump process is gone. Release this drive
+                </ButtonItem>
+              ) : null}
+            </PanelSectionRow>
+          ))
+        )}
+      </PanelSection>
+      <PanelSection title="Diagnostics">
+        <PanelSectionRow>
+          <div>
+            Refresh only reads inventory. Mount, unmount, eject, an ISO mount, and a Redumper dump run when you press those buttons. The result stays in the message below.
           </div>
         </PanelSectionRow>
         <PanelSectionRow>
@@ -173,7 +282,8 @@ export function DiagnosticsPanel({
         </PanelSectionRow>
         <PanelSectionRow>
           <div>
-            Redumper: {redumper?.launch_kind ?? redumper?.status ?? "not collected"}; version {redumper?.version_status ?? "not collected"}; executed {redumper?.executed ? "yes" : "no"}
+            Redumper: {redumper?.build ? `build ${redumper.build}` : "missing"}
+            {redumper?.origin === "updated" ? " (updated)" : redumper?.origin === "bundled" ? " (shipped with DiscDeck)" : ""}; executed {redumper?.executed ? "yes" : "no"}
           </div>
         </PanelSectionRow>
         <PanelSectionRow>

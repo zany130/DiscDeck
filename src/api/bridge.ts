@@ -7,12 +7,17 @@ export const probeModule = callable<[moduleId: string], Envelope<{ module: Diagn
 export const ping = callable<[], Envelope<{ pong: boolean; phase: string; hardware_validated: boolean }>>("ping");
 export const emitProbeEvent = callable<[], Envelope<{ epoch: string; revision: number; domain: string }>>("emit_probe_event");
 export const readRedumperVersion = callable<[allowUntestedWrapper?: boolean], Envelope<Record<string, unknown>>>("read_redumper_version");
+export const updateRedumper = callable<[], Envelope<Record<string, unknown>>>("update_redumper");
 export const checkUpdate = callable<[], Envelope<Record<string, unknown>>>("check_update");
 export const mountFilesystem = callable<[driveId: string, generation: number, mediaGeneration: number], Envelope<Record<string, unknown>>>("mount_filesystem");
 export const unmountFilesystem = callable<[driveId: string, generation: number], Envelope<Record<string, unknown>>>("unmount_filesystem");
 export const ejectDrive = callable<[driveId: string, generation: number, confirmed?: boolean], Envelope<Record<string, unknown>>>("eject_drive");
 export const mountIso = callable<[path: string], Envelope<Record<string, unknown>>>("mount_iso");
 export const unmountIso = callable<[imageId: string], Envelope<Record<string, unknown>>>("unmount_iso");
+export const startDump = callable<[driveId: string, generation: number, imageName: string, outputRoot: string], Envelope<Record<string, unknown>>>("start_dump");
+export const cancelDump = callable<[jobId: string], Envelope<Record<string, unknown>>>("cancel_dump");
+export const forceStopDump = callable<[jobId: string, confirmed?: boolean], Envelope<Record<string, unknown>>>("force_stop_dump");
+export const acknowledgeDump = callable<[jobId: string], Envelope<Record<string, unknown>>>("acknowledge_dump");
 
 export const PHASE0_PUBLIC_HELPERS = [
   "callable",

@@ -54,7 +54,7 @@ def metadata(plan: dict[str, Any], zip_sha256: str, version: str | None = None) 
         "object_key": plan["unique_key"],
         "canonical_key": plan["canonical_key"],
         "zip_sha256": zip_sha256,
-        "phase": "2",
+        "phase": "3",
         "hardware_validated": False,
         "plugin": "DiscDeck",
     }

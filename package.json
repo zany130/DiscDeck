@@ -1,7 +1,7 @@
 {
   "name": "discdeck",
-  "version": "0.2.1",
-  "description": "DiscDeck Decky plugin for physical discs and read-only filesystem images",
+  "version": "0.3.7",
+  "description": "DiscDeck Decky plugin for physical discs, read-only filesystem images, and Redumper preservation",
   "type": "module",
   "scripts": {
     "build": "rollup -c",

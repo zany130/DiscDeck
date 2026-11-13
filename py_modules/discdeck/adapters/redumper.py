@@ -1,70 +1,73 @@
-"""Redumper discovery without disc access.
+"""Redumper selection.
 
-A distrobox export wrapper is identified and not executed. ``--version`` is
-available only for a non-wrapper binary, and only when a caller explicitly
-requests it. No ``disc`` command is ever constructed.
+Only the executable shipped with DiscDeck, or a newer official build saved by
+Update Redumper, is visible here. PATH, a user-bin install, and a container
+wrapper are ignored.
 """
 
 from __future__ import annotations
 
 import hashlib
-import os
 from pathlib import Path
 from typing import Any
 
 from discdeck.commands import CommandRunner
+from discdeck.redumper_bundle import is_linux_x64_elf, select_redumper
 
-MAX_HASH_BYTES = 32 * 1024 * 1024
-WRAPPER_MARKERS = ("distrobox", "distrobox-host-exec")
+MAX_HASH_BYTES = 16 * 1024 * 1024
 
 
-def discover(environ: dict[str, str], configured_path: str | None = None) -> dict[str, Any]:
-    candidate = _resolve(environ, configured_path)
-    if candidate is None:
+def discover(environ: dict[str, str]) -> dict[str, Any]:
+    selected = select_redumper(environ)
+    if not selected["path"]:
         return {
             "status": "missing",
             "reason_code": "REDUMPER_MISSING",
-            "message": "No redumper executable was found on PATH or in the configured path.",
+            "message": "The Redumper build shipped with DiscDeck is not available. A system or container copy is not used.",
             "path": None,
+            "origin": None,
+            "build": None,
+            "bundled_build": selected["bundled_build"],
+            "updated_build": selected["updated_build"],
             "executed": False,
             "version": None,
             "version_status": "not_executed",
+            "launch_kind": "absent",
+            "exists": False,
+            "sha256": None,
+            "size": None,
             "hardware_validated": False,
         }
-    info = _describe(candidate)
-    info.update(
-        {
-            "status": "untested",
-            "reason_code": "REDUMPER_VERSION_NOT_EXECUTED",
-            "message": "Redumper was found. It was not executed, so its version and dump behavior are untested.",
-            "executed": False,
-            "version": None,
-            "version_status": "not_executed",
-            "hardware_validated": False,
-        }
-    )
-    return info
+    where = "the copy shipped with DiscDeck" if selected["origin"] == "bundled" else "the newer official build saved by Update Redumper"
+    return {
+        "status": "untested",
+        "reason_code": "REDUMPER_VERSION_NOT_EXECUTED",
+        "message": f"Redumper build {selected['build']} from {where} is selected. It has not been executed.",
+        "path": selected["path"],
+        "origin": selected["origin"],
+        "build": selected["build"],
+        "bundled_build": selected["bundled_build"],
+        "updated_build": selected["updated_build"],
+        "executed": False,
+        "version": None,
+        "version_status": "not_executed",
+        "launch_kind": "native_executable",
+        "exists": True,
+        "sha256": selected["sha256"],
+        "size": selected["size"],
+        "hardware_validated": False,
+    }
 
 
-def read_version(path: str, runner: CommandRunner | Any, *, allow_untested_wrapper: bool) -> dict[str, Any]:
+def read_version(path: str, runner: CommandRunner | Any, *, allow_untested_wrapper: bool = False) -> dict[str, Any]:
+    del allow_untested_wrapper
     described = _describe(Path(path))
-    if not described["exists"]:
+    if described["launch_kind"] != "native_executable" or not _managed_manifest(Path(path), described.get("sha256")):
         return {
             **described,
             "status": "missing",
-            "reason_code": "REDUMPER_MISSING",
-            "message": "The selected redumper path does not exist.",
-            "executed": False,
-            "version": None,
-            "version_status": "not_executed",
-            "hardware_validated": False,
-        }
-    if described["launch_kind"] == "distrobox_wrapper" and not allow_untested_wrapper:
-        return {
-            **described,
-            "status": "untested",
-            "reason_code": "DISTROBOX_WRAPPER_NOT_EXECUTED",
-            "message": "The installed redumper path is a container wrapper. Phase 0 did not execute it.",
+            "reason_code": "REDUMPER_NOT_MANAGED",
+            "message": "Only the Redumper executable shipped with DiscDeck, or installed by Update Redumper, can be run.",
             "executed": False,
             "version": None,
             "version_status": "not_executed",
@@ -97,46 +100,15 @@ def read_version(path: str, runner: CommandRunner | Any, *, allow_untested_wrapp
     }
 
 
-def _resolve(environ: dict[str, str], configured_path: str | None) -> Path | None:
-    if configured_path:
-        path = Path(configured_path)
-        return path if path.is_file() else None
-    for directory in (environ.get("PATH") or "").split(os.pathsep):
-        if not directory:
-            continue
-        candidate = Path(directory) / "redumper"
-        if candidate.is_file():
-            return candidate
-    # Decky does not inherit a login-shell PATH. The XDG user bin is the
-    # location a per-user install uses, resolved from the owner home.
-    seen: set[Path] = set()
-    for key in ("DECKY_USER_HOME", "HOME"):
-        raw = environ.get(key)
-        if not raw:
-            continue
-        candidate = Path(raw) / ".local" / "bin" / "redumper"
-        if candidate in seen:
-            continue
-        seen.add(candidate)
-        if candidate.is_file():
-            return candidate
-    return None
-
-
 def _describe(path: Path) -> dict[str, Any]:
-    if not path.is_file():
+    if not path.is_file() or path.is_symlink():
         return {"path": str(path), "exists": False, "launch_kind": "absent", "sha256": None, "size": None}
     size = path.stat().st_size
-    text_sample = ""
     try:
-        text_sample = path.read_text(encoding="utf-8", errors="replace")[:4096]
+        prefix = path.read_bytes()[:4096]
     except OSError:
-        text_sample = ""
-    launch_kind = "native_executable"
-    if text_sample.startswith("#!") and any(marker in text_sample for marker in WRAPPER_MARKERS):
-        launch_kind = "distrobox_wrapper"
-    elif text_sample.startswith("#!"):
-        launch_kind = "script"
+        prefix = b""
+    launch_kind = "native_executable" if is_linux_x64_elf(prefix) else "script"
     return {
         "path": str(path),
         "exists": True,
@@ -144,6 +116,23 @@ def _describe(path: Path) -> dict[str, Any]:
         "sha256": _sha256(path, size),
         "size": size,
     }
+
+
+def _managed_manifest(path: Path, digest: str | None) -> bool:
+    if path.name != "redumper" or not isinstance(digest, str):
+        return False
+    manifest = path.with_name("redumper.json")
+    if not manifest.is_file() or manifest.is_symlink():
+        return False
+    try:
+        import json
+
+        payload = json.loads(manifest.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return False
+    recorded = payload.get("binary_sha256") if isinstance(payload, dict) else None
+    origin = payload.get("origin") if isinstance(payload, dict) else None
+    return origin in {"bundled", "updated"} and isinstance(recorded, str) and recorded.lower() == digest
 
 
 def _sha256(path: Path, size: int) -> str | None:

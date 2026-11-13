@@ -1,0 +1,10 @@
+{
+  "repository": "superg/redumper",
+  "tag": "b772",
+  "build": 772,
+  "asset": "redumper-b772-linux-x64.zip",
+  "url": "https://github.com/superg/redumper/releases/download/b772/redumper-b772-linux-x64.zip",
+  "sha256": "ae4b68ded3f8c604162f7db35d337d6ccab33b666b347278b975c4226d72b577",
+  "binary_sha256": "eb157cdb51dc1e122803fcfe9252dd959efa5c04559d24cb1a30a002cf93ecda",
+  "member": "redumper-b772-linux-x64/bin/redumper"
+}

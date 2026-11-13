@@ -2,12 +2,13 @@ import { addEventListener, definePlugin, openFilePicker, removeEventListener, to
 import { staticClasses } from "@decky/ui";
 import { useEffect, useState } from "react";
 import { FaCompactDisc } from "react-icons/fa";
-import { checkUpdate, ejectDrive, emitProbeEvent, getSnapshot, mountFilesystem, mountIso, ping, readRedumperVersion, unmountFilesystem, unmountIso } from "./api/bridge";
+import { acknowledgeDump, cancelDump, checkUpdate, ejectDrive, emitProbeEvent, forceStopDump, getSnapshot, mountFilesystem, mountIso, ping, readRedumperVersion, startDump, unmountFilesystem, unmountIso, updateRedumper } from "./api/bridge";
 import { requestDevelopmentInstall } from "./api/installUpdate";
 import { subscribeChanged } from "./api/events";
 import type { DiagnosticSnapshot } from "./api/types";
 import { DiagnosticsPanel } from "./components/DiagnosticsPanel";
 import { actionNotice } from "./state/actionNotice";
+import { chosenDumpFolder, dumpFolderRequest, publishDumpFolder, rejectedDumpFolderReason, rememberedDumpFolder, subscribeDumpFolder } from "./state/dumpRequest";
 import { chosenIsoPath, isoPickerRequest } from "./state/isoPicker";
 import { acceptSnapshot } from "./state/snapshotReducer";
 import { updateNotice, type UpdateOffer } from "./state/updateNotice";
@@ -18,9 +19,13 @@ function Content() {
   const [snapshot, setSnapshot] = useState<DiagnosticSnapshot | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [updateMessage, setUpdateMessage] = useState<string | null>(null);
+  const [redumperMessage, setRedumperMessage] = useState<string | null>(null);
   const [updateOffer, setUpdateOffer] = useState<UpdateOffer | null>(null);
   const [busy, setBusy] = useState(false);
   const [pendingEjectId, setPendingEjectId] = useState<string | null>(null);
+  const [imageName, setImageName] = useState("disc");
+  const [outputRoot, setOutputRoot] = useState<string | null>(rememberedDumpFolder);
+  const [pendingForceJobId, setPendingForceJobId] = useState<string | null>(null);
   const visible = useQuickAccessVisible();
 
   const refresh = () => {
@@ -50,6 +55,8 @@ function Content() {
     };
   }, []);
 
+  useEffect(() => subscribeDumpFolder(setOutputRoot), []);
+
   useEffect(() => {
     if (visible) {
       refresh();
@@ -63,6 +70,27 @@ function Content() {
       error={error}
       updateMessage={updateMessage}
       updateOfferLabel={updateOffer?.label ?? null}
+      redumperMessage={redumperMessage}
+      onUpdateRedumper={() => {
+        setBusy(true);
+        void updateRedumper()
+          .then((response) => {
+            const notice = response.ok
+              ? String(response.result.message ?? "Redumper was checked.")
+              : `${response.code}: ${response.message}`;
+            setRedumperMessage(notice);
+            toaster.toast({ title: "Redumper", body: notice });
+          })
+          .catch((caught: unknown) => {
+            const notice = caught instanceof Error ? caught.message : "The Redumper update failed.";
+            setRedumperMessage(notice);
+            toaster.toast({ title: "Redumper", body: notice });
+          })
+          .finally(() => {
+            setBusy(false);
+            refresh();
+          });
+      }}
       onCheckUpdate={() => {
         setBusy(true);
         void checkUpdate()
@@ -213,6 +241,130 @@ function Content() {
             const notice = caught instanceof Error ? caught.message : "The ISO request failed.";
             setError(notice);
             toaster.toast({ title: "DiscDeck ISO", body: notice });
+          })
+          .finally(() => {
+            setBusy(false);
+            refresh();
+          });
+      }}
+      imageName={imageName}
+      onImageName={setImageName}
+      outputRoot={outputRoot}
+      pendingForceJobId={pendingForceJobId}
+      onChooseDumpFolder={() => {
+        setPendingEjectId(null);
+        setBusy(true);
+        const request = dumpFolderRequest(snapshot?.identity.home);
+        void openFilePicker(
+          request.select,
+          request.startPath,
+          request.includeFiles,
+          request.includeFolders,
+          undefined,
+          undefined,
+          request.showHiddenFiles,
+          request.allowAllFiles,
+        )
+          .then((picked) => {
+            const folder = chosenDumpFolder(picked);
+            if (!folder) {
+              const notice = rejectedDumpFolderReason(picked);
+              setError(notice);
+              toaster.toast({ title: "DiscDeck dump", body: notice });
+              return;
+            }
+            publishDumpFolder(folder);
+            toaster.toast({ title: "DiscDeck dump", body: `Dump folder set to ${folder}.` });
+          })
+          .catch((caught: unknown) => {
+            const raw = caught instanceof Error ? caught.message : typeof caught === "string" ? caught : "The folder request failed.";
+            const notice = raw === "User canceled" ? rejectedDumpFolderReason(null) : raw;
+            setError(notice);
+            toaster.toast({ title: "DiscDeck dump", body: notice });
+          })
+          .finally(() => {
+            setBusy(false);
+          });
+      }}
+      onDump={(driveId, generation) => {
+        if (!outputRoot) {
+          return;
+        }
+        setPendingEjectId(null);
+        setBusy(true);
+        void startDump(driveId, generation, imageName.trim() || "disc", outputRoot)
+          .then((response) => {
+            const notice = actionNotice(response);
+            setError(notice);
+            toaster.toast({ title: "DiscDeck dump", body: notice });
+          })
+          .catch((caught: unknown) => {
+            const notice = caught instanceof Error ? caught.message : "The dump request failed.";
+            setError(notice);
+            toaster.toast({ title: "DiscDeck dump", body: notice });
+          })
+          .finally(() => {
+            setBusy(false);
+            refresh();
+          });
+      }}
+      onCancelDump={(jobId) => {
+        setBusy(true);
+        void cancelDump(jobId)
+          .then((response) => {
+            const notice = actionNotice(response);
+            setError(notice);
+            toaster.toast({ title: "DiscDeck dump", body: notice });
+          })
+          .catch((caught: unknown) => {
+            const notice = caught instanceof Error ? caught.message : "Cancel failed.";
+            setError(notice);
+            toaster.toast({ title: "DiscDeck dump", body: notice });
+          })
+          .finally(() => {
+            setBusy(false);
+            refresh();
+          });
+      }}
+      onForceDump={(jobId) => {
+        const confirmed = pendingForceJobId === jobId;
+        if (!confirmed) {
+          setPendingForceJobId(jobId);
+          const notice = "Press Confirm force stop. The process is still running.";
+          setError(notice);
+          toaster.toast({ title: "DiscDeck dump", body: notice });
+          return;
+        }
+        setPendingForceJobId(null);
+        setBusy(true);
+        void forceStopDump(jobId, true)
+          .then((response) => {
+            const notice = actionNotice(response);
+            setError(notice);
+            toaster.toast({ title: "DiscDeck dump", body: notice });
+          })
+          .catch((caught: unknown) => {
+            const notice = caught instanceof Error ? caught.message : "Force stop failed.";
+            setError(notice);
+            toaster.toast({ title: "DiscDeck dump", body: notice });
+          })
+          .finally(() => {
+            setBusy(false);
+            refresh();
+          });
+      }}
+      onAcknowledgeDump={(jobId) => {
+        setBusy(true);
+        void acknowledgeDump(jobId)
+          .then((response) => {
+            const notice = actionNotice(response);
+            setError(notice);
+            toaster.toast({ title: "DiscDeck dump", body: notice });
+          })
+          .catch((caught: unknown) => {
+            const notice = caught instanceof Error ? caught.message : "The drive was not released.";
+            setError(notice);
+            toaster.toast({ title: "DiscDeck dump", body: notice });
           })
           .finally(() => {
             setBusy(false);

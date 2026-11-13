@@ -35,14 +35,14 @@ The VS Code deploy example under `.vscode/defsettings.json` still contains the t
 
 ## Packaging
 
-The ZIP root is `DiscDeck/` and contains `dist/index.js`, `plugin.json`, `package.json`, `main.py`, `LICENSE`, `README.md`, and `py_modules/`. Files under `defaults/` are flattened into that root, matching Decky CLI 0.0.8. The packaged `build_info.json` records the git commit and sets `hardware_validated` to false.
+The ZIP root is `DiscDeck/` and contains `dist/index.js`, `plugin.json`, `package.json`, `main.py`, `LICENSE`, `README.md`, `bin/redumper`, and `py_modules/`. Packaging downloads the pinned Redumper Linux x64 release, checks its SHA-256, and stores that executable at `bin/redumper`. It does not copy a Redumper binary from the build machine. Files under `defaults/` are flattened into that root, matching Decky CLI 0.0.8. The packaged `build_info.json` records the git commit and sets `hardware_validated` to false.
 
 ## CI
 
-`.github/workflows/ci.yml` runs on pull requests and on pushes to `main` and `cursor/phase0-foundation-beb3`. It installs the lockfile, runs the checks above, builds the ZIP, verifies it, and uploads `DiscDeck-phase0-dev-<full-sha>`.
+`.github/workflows/ci.yml` runs on pull requests and on pushes to `main`, `cursor/phase0-foundation-beb3`, `cursor/phase2-iso-library-beb3`, and `cursor/phase3-redumper-beb3`. It installs the lockfile, runs the checks above, builds the ZIP, verifies it, and uploads `DiscDeck-phase0-dev-<full-sha>`.
 
-The publish job runs only for a push whose branch is in `DISCDECK_PUBLISH_BRANCHES` (default `main,cursor/phase0-foundation-beb3`). See [distribution.md](distribution.md).
+The publish job runs only for a push whose branch is in `DISCDECK_PUBLISH_BRANCHES` (default `main,cursor/phase0-foundation-beb3,cursor/phase2-iso-library-beb3,cursor/phase3-redumper-beb3`). See [distribution.md](distribution.md).
 
 ## Safety boundaries
 
-Do not add the `root` plugin flag. Do not call `modprobe`, start `cdemu-daemon`, mount or eject, run `redumper disc`, or edit Steam files from a diagnostic probe. New host commands have to go through `discdeck.security.assert_readonly_argv`.
+Do not add the `root` plugin flag. Do not call `modprobe`, start `cdemu-daemon`, or edit Steam files from a diagnostic probe. Mount, eject, and `redumper disc` run only through their explicit action policies. Diagnostic probes stay on `assert_readonly_argv`.

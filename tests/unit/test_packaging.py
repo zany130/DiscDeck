@@ -13,6 +13,12 @@ sys.path.insert(0, str(ROOT / "scripts"))
 import package_plugin  # noqa: E402
 import publish_plan  # noqa: E402
 import verify_zip  # noqa: E402
+from tests.support.fixtures import linux_x64_elf_fixture, managed_redumper_manifest  # noqa: E402
+
+
+def _redumper() -> tuple[bytes, dict[str, object]]:
+    binary = linux_x64_elf_fixture()
+    return binary, managed_redumper_manifest(binary)
 
 
 class PackagingTests(unittest.TestCase):
@@ -36,7 +42,7 @@ class PackagingTests(unittest.TestCase):
             (source / "defaults" / "note.txt").parent.mkdir()
             (source / "defaults" / "note.txt").write_text("note\n", encoding="utf-8")
             stage = Path(temporary) / "stage"
-            package_plugin.stage_plugin(source, stage, "abcdef1234567890")
+            package_plugin.stage_plugin(source, stage, "abcdef1234567890", _redumper())
             destination = Path(temporary) / "DiscDeck-phase0-dev-abcdef1.zip"
             package_plugin.write_zip(stage, destination, "DiscDeck")
             self.assertEqual(verify_zip.verify_zip(destination), [])

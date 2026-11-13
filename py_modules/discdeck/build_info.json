@@ -1,7 +1,7 @@
 {
   "commit": null,
   "channel": "development",
-  "phase": "2",
-  "version": "0.2.1",
+  "phase": "3",
+  "version": "0.3.4",
   "hardware_validated": false
 }

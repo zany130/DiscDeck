@@ -125,6 +125,48 @@ def _accept_image_argv(argv: list[str]) -> bool:
     return False
 
 
+_SG_NODE = re.compile(r"^/dev/sg[0-9]+$")
+_IMAGE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
+_RETRIES = re.compile(r"^--retries=([0-5])$")
+
+
+def assert_dump_argv(argv: list[str]) -> None:
+    """Allow redumper --version, or one disc command with no overwrite flag."""
+    if not argv or any(not isinstance(part, str) or part == "" for part in argv):
+        raise UnsafeCommand("Command arguments must be non-empty strings.")
+    if any("\n" in part or "\x00" in part for part in argv):
+        raise UnsafeCommand("Command arguments contain unsupported characters.")
+    if Path(argv[0]).name != "redumper":
+        raise UnsafeCommand("Preservation only runs the redumper executable.")
+    if not argv[0].startswith("/") or any(part in {"", ".", ".."} for part in PurePosixPath(argv[0]).parts):
+        raise UnsafeCommand("Redumper must be an absolute path.")
+    if len(argv) == 2 and argv[1] == "--version":
+        return
+    if len(argv) not in {5, 6}:
+        raise UnsafeCommand("Redumper may only run disc with a drive, image path, and image name.")
+    if argv[1] != "disc":
+        raise UnsafeCommand("Redumper may only run disc with a drive, image path, and image name.")
+    if any(part == "--overwrite" or part.startswith("--overwrite=") or part == "cd" for part in argv):
+        raise UnsafeCommand("Redumper overwrite and cd are refused.")
+    drive = argv[2].removeprefix("--drive=")
+    image_path = argv[3].removeprefix("--image-path=")
+    image_name = argv[4].removeprefix("--image-name=")
+    if not argv[2].startswith("--drive=") or _SG_NODE.fullmatch(drive) is None:
+        raise UnsafeCommand("Redumper drive must be one /dev/sg node.")
+    if (
+        not argv[3].startswith("--image-path=")
+        or not image_path.startswith("/")
+        or image_path.startswith("/dev/")
+        or image_path != PurePosixPath(image_path).as_posix()
+        or any(part in {"", ".", ".."} for part in PurePosixPath(image_path).parts)
+    ):
+        raise UnsafeCommand("Redumper image path must be an absolute directory outside /dev.")
+    if not argv[4].startswith("--image-name=") or _IMAGE_NAME.fullmatch(image_name) is None:
+        raise UnsafeCommand("Redumper image name contains unsupported characters.")
+    if len(argv) == 6 and _RETRIES.fullmatch(argv[5]) is None:
+        raise UnsafeCommand("Redumper retries must be a single digit from 0 through 5.")
+
+
 def assert_physical_udisks_argv(argv: list[str]) -> None:
     """Allow one explicit UDisks2 action built by DiscDeck."""
     if not argv or any(not isinstance(part, str) or part == "" for part in argv):
