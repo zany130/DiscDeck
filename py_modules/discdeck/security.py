@@ -243,7 +243,7 @@ def assert_virtual_argv(argv: list[str]) -> None:
         if (
             len(tail) == 6
             and tail[0] == "DeviceLoad"
-            and tail[1] == "isa{sv}"
+            and tail[1] == "iasa{sv}"
             and _device_token(tail[2])
             and tail[3] == "1"
             and _disc_image_token(tail[4])

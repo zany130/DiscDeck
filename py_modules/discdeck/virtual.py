@@ -57,7 +57,8 @@ def mapping_argv(device: int) -> list[str]:
 
 
 def load_argv(device: int, image: str) -> list[str]:
-    return _checked([*_CALL, "DeviceLoad", "isa{sv}", str(device), "1", image, "0"])
+    # DeviceLoad takes an int, an array of filenames, and an empty dict: iasa{sv}.
+    return _checked([*_CALL, "DeviceLoad", "iasa{sv}", str(device), "1", image, "0"])
 
 
 def unload_argv(device: int) -> list[str]:

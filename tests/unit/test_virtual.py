@@ -259,6 +259,7 @@ class VirtualDiscTests(unittest.TestCase):
 
     def test_virtual_policy_rejects_the_client_and_blank_discs(self) -> None:
         assert_virtual_argv(load_argv(0, "/games/demo.cue"))
+        self.assertEqual(load_argv(0, "/games/demo.iso")[-5], "iasa{sv}")
         assert_virtual_argv(start_daemon_argv())
         for argv in (
             ["cdemu", "load", "0", "/games/demo.iso"],
