@@ -9,7 +9,7 @@ from discdeck.commands import CommandResult, ScriptedRunner
 from discdeck.diagnostics import DiagnosticService
 from discdeck.errors import UnsafeCommand
 from discdeck.security import assert_readonly_argv, assert_virtual_argv
-from discdeck.virtual import _number, _session_wrap, load_argv, mapping_argv, number_argv, start_daemon_argv, status_argv, unload_argv, validate_disc_image
+from discdeck.virtual import _mapping_parts, _number, _session_wrap, _status_parts, load_argv, mapping_argv, number_argv, start_daemon_argv, status_argv, unload_argv, validate_disc_image
 from tests.support.fixtures import scripted_bus_responses, write_cdemu_installation
 
 
@@ -171,6 +171,37 @@ class VirtualDiscTests(unittest.TestCase):
             self.assertIn(unload_argv(0), virtual.calls)
             self.assertEqual(service.snapshot()["virtual_slots"], [])
 
+    def test_classic_busctl_text_loads_the_image(self) -> None:
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            image = root / "game.iso"
+            image.write_bytes(b"iso")
+            service, virtual = self._service(root, active=True, image=image)
+            virtual.before[tuple(number_argv())] = _result(number_argv(), "Running as unit: run-u1.service\ni 1\n")
+            virtual.before[tuple(status_argv(0))] = _result(status_argv(0), "b false\nas 0\n")
+            virtual.after[tuple(status_argv(0))] = _result(status_argv(0), f'b true\nas 1 "{image}"\n')
+            virtual.before[tuple(mapping_argv(0))] = _result(mapping_argv(0), 's "/dev/sr4"\ns "/dev/sg6"\n')
+            virtual.after[tuple(mapping_argv(0))] = virtual.before[tuple(mapping_argv(0))]
+            result = service.load_virtual(str(image))
+            self.assertTrue(result["ok"], result)
+            self.assertEqual(result["result"]["sr_device"], "/dev/sr4")
+            self.assertFalse(any(call[0] == "systemd-run" for call in virtual.calls))
+
+    def test_launch_helper_failure_retries_inside_the_session_unit(self) -> None:
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            image = root / "game.iso"
+            image.write_bytes(b"iso")
+            service, virtual = self._service(
+                root,
+                active=True,
+                image=image,
+                number_failure="Call failed: Launch helper exited with unknown return code 1",
+            )
+            result = service.load_virtual(str(image))
+            self.assertTrue(result["ok"], result)
+            self.assertIn(_session_wrap(number_argv()), virtual.calls)
+
     def test_user_bus_failure_retries_inside_the_session_unit(self) -> None:
         with TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -184,7 +215,16 @@ class VirtualDiscTests(unittest.TestCase):
 
     def test_plain_device_count_is_accepted(self) -> None:
         self.assertEqual(_number(CommandResult(["busctl"], 0, "i 1\n", "")), 1)
+        self.assertEqual(_number(CommandResult(["busctl"], 0, "Running as unit: run-u1.service\ni 1\n", "")), 1)
         self.assertIsNone(_number(CommandResult(["busctl"], 1, "i 1\n", "Failed to connect to bus")))
+        empty = CommandResult(["busctl"], 0, "b false\nas 0\n", "")
+        loaded = CommandResult(["busctl"], 0, 'b true\nas 1 "/games/game.iso"\n', "")
+        self.assertEqual(_status_parts(empty), ("empty", []))
+        self.assertEqual(_status_parts(loaded), ("loaded", ["/games/game.iso"]))
+        self.assertEqual(
+            _mapping_parts(CommandResult(["busctl"], 0, 's "/dev/sr4"\ns "/dev/sg6"\n', "")),
+            ("/dev/sr4", "/dev/sg6"),
+        )
 
     def test_virtual_policy_rejects_the_client_and_blank_discs(self) -> None:
         assert_virtual_argv(load_argv(0, "/games/demo.cue"))
@@ -199,6 +239,16 @@ class VirtualDiscTests(unittest.TestCase):
                 assert_virtual_argv(argv)
         with self.assertRaises(UnsafeCommand):
             assert_readonly_argv(["systemctl", "--user", "start", "cdemu-daemon.service"])
+        wrapped = _session_wrap(
+            number_argv(),
+            {"XDG_RUNTIME_DIR": "/run/user/1000", "DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/user/1000/bus"},
+        )
+        assert_virtual_argv(wrapped)
+        self.assertIn("--setenv=XDG_RUNTIME_DIR=/run/user/1000", wrapped)
+        with_guid = _session_wrap(number_argv(), {"DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/user/1000/bus,guid=abc"})
+        self.assertIn("--setenv=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus", with_guid)
+        with self.assertRaises(UnsafeCommand):
+            assert_virtual_argv(["systemd-run", "--user", "--pipe", "--wait", "--collect", "--setenv=LD_PRELOAD=/tmp/x", *number_argv()])
 
     def _service(
         self,
@@ -209,6 +259,7 @@ class VirtualDiscTests(unittest.TestCase):
         initial_status: str | None = None,
         vhba: bool = True,
         number_in_session: bool = False,
+        number_failure: str | None = None,
     ) -> tuple[DiagnosticService, SwitchingRunner]:
         sysfs = root / "sys"
         dev = root / "dev"
@@ -221,10 +272,12 @@ class VirtualDiscTests(unittest.TestCase):
         loaded = _status_json(True, [str(image)])
         mapping = json.dumps({"type": "ss", "data": ["/dev/sr4", "/dev/sg6"]}) + "\n"
         number = json.dumps({"type": "i", "data": 1}) + "\n"
-        direct_number = CommandResult(number_argv(), 1, "", "Failed to connect to bus: No such file or directory")
+        if number_failure is None and number_in_session:
+            number_failure = "Failed to connect to bus: No such file or directory"
+        direct_number = CommandResult(number_argv(), 1, "", number_failure or "")
         before = {
             tuple(start_daemon_argv()): _result(start_daemon_argv(), ""),
-            tuple(number_argv()): direct_number if number_in_session else _result(number_argv(), number),
+            tuple(number_argv()): direct_number if number_failure else _result(number_argv(), number),
             tuple(_session_wrap(number_argv())): _result(_session_wrap(number_argv()), number),
             tuple(status_argv(0)): _result(status_argv(0), initial_status or empty),
             tuple(mapping_argv(0)): _result(mapping_argv(0), mapping),

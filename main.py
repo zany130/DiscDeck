@@ -135,7 +135,10 @@ class Plugin:
         return result
 
     async def load_virtual(self, path: str) -> dict:
+        decky.logger.info("Virtual disc load requested.")
         result = self.service.load_virtual(str(path))
+        if not result.get("ok"):
+            decky.logger.info("Virtual disc load failed: %s %s", result.get("code"), result.get("message"))
         slot_id = result.get("result", {}).get("slot_id") if isinstance(result.get("result"), dict) else None
         await decky.emit("discdeck:changed", {"epoch": self.service.epoch, "revision": self.service.revision, "domain": "virtual", "id": slot_id})
         return result

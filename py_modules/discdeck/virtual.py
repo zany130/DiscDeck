@@ -24,9 +24,17 @@ from discdeck.settings import load_settings
 
 _BUS = "net.sf.cdemu.CDEmuDaemon"
 _OBJECT = "/Daemon"
-_WRAP = ["systemd-run", "--user", "--pipe", "--wait", "--collect", "--quiet"]
-_JSON = ["busctl", "--user", "--no-pager", "--json=short", "call", _BUS, _OBJECT, _BUS]
-_CALL = ["busctl", "--user", "--no-pager", "call", _BUS, _OBJECT, _BUS]
+_WRAP = ["systemd-run", "--user", "--pipe", "--wait", "--collect"]
+_CALL = [
+    "busctl",
+    "--user",
+    "--no-pager",
+    "--allow-interactive-authorization=false",
+    "call",
+    _BUS,
+    _OBJECT,
+    _BUS,
+]
 _CUE_FILE = re.compile(r'^\s*FILE\s+(?:"([^"\r\n]+)"|([^\s"\r\n]+))\s+\S+', re.IGNORECASE)
 _SR = re.compile(r"^/dev/sr[0-9]+$")
 _SG = re.compile(r"^/dev/sg[0-9]+$")
@@ -37,15 +45,15 @@ def start_daemon_argv() -> list[str]:
 
 
 def number_argv() -> list[str]:
-    return _checked([*_JSON, "GetNumberOfDevices"])
+    return _checked([*_CALL, "GetNumberOfDevices"])
 
 
 def status_argv(device: int) -> list[str]:
-    return _checked([*_JSON, "DeviceGetStatus", "i", str(device)])
+    return _checked([*_CALL, "DeviceGetStatus", "i", str(device)])
 
 
 def mapping_argv(device: int) -> list[str]:
-    return _checked([*_JSON, "DeviceGetMapping", "i", str(device)])
+    return _checked([*_CALL, "DeviceGetMapping", "i", str(device)])
 
 
 def load_argv(device: int, image: str) -> list[str]:
@@ -61,8 +69,17 @@ def _checked(argv: list[str]) -> list[str]:
     return argv
 
 
-def _session_wrap(argv: list[str]) -> list[str]:
-    return _checked([*_WRAP, *argv])
+def _session_wrap(argv: list[str], env: dict[str, str] | None = None) -> list[str]:
+    extra: list[str] = []
+    if env:
+        runtime = env.get("XDG_RUNTIME_DIR", "")
+        address = env.get("DBUS_SESSION_BUS_ADDRESS", "")
+        if re.fullmatch(r"/run/user/[0-9]+", runtime):
+            extra.append(f"--setenv=XDG_RUNTIME_DIR={runtime}")
+        path_only = address.split(",", 1)[0]
+        if re.fullmatch(r"unix:path=/run/user/[0-9]+/bus", path_only):
+            extra.append(f"--setenv=DBUS_SESSION_BUS_ADDRESS={path_only}")
+    return _checked([*_WRAP, *extra, *argv])
 
 
 def validate_disc_image(raw: str) -> Path:
@@ -166,6 +183,7 @@ class VirtualDiscs:
             result = self._run(start_daemon_argv(), 20)
             if result.code != 0:
                 detail = _detail(result)
+                self._log(f"CDEmu user service did not start ({result.code}): {detail}")
                 return self._error("NOT_READY", f"The CDEmu user service did not start. {detail}".strip())
             started = True
         count, number_result = self._device_count()
@@ -179,6 +197,7 @@ class VirtualDiscs:
         for device in range(count):
             statuses.append(self._status(device))
         if any(status == "unavailable" for status, _files in statuses):
+            self._log("CDEmu device status was not understood. Nothing was loaded.")
             return self._error("NOT_READY", "CDEmu did not report device status. Nothing was loaded.")
         image = str(path)
         for device, (status, files) in enumerate(statuses):
@@ -281,7 +300,7 @@ class VirtualDiscs:
     def _device_count(self) -> tuple[int | None, Any]:
         last = None
         for attempt in range(8):
-            last = self._run(number_argv(), 10, expect_body=True)
+            last = self._run(number_argv(), 10, expect_body=True, parsed=lambda item: _number(item) is not None)
             count = _number(last)
             if count is not None:
                 return count, last
@@ -291,23 +310,15 @@ class VirtualDiscs:
         return None, last
 
     def _status(self, device: int) -> tuple[str, list[str]]:
-        result = self._run(status_argv(device), 10, expect_body=True)
-        parsed = _json_data(result)
-        if result.code != 0 or not isinstance(parsed, list) or len(parsed) < 2 or not isinstance(parsed[0], bool):
-            return "unavailable", []
-        files = [item for item in parsed[1] if isinstance(item, str)] if isinstance(parsed[1], list) else []
-        if parsed[0]:
-            return "loaded", files
-        return "empty", files
+        result = self._run(status_argv(device), 10, expect_body=True, parsed=lambda item: _status_parts(item)[0] != "unavailable")
+        state, files = _status_parts(result)
+        if state == "unavailable":
+            self._log(f"CDEmu status for device {device} was not understood ({getattr(result, 'code', None)}): {_detail(result)}")
+        return state, files
 
     def _mapping(self, device: int) -> tuple[str | None, str | None]:
-        result = self._run(mapping_argv(device), 10, expect_body=True)
-        parsed = _json_data(result)
-        if result.code != 0 or not isinstance(parsed, list) or len(parsed) < 2:
-            return None, None
-        sr_device = parsed[0] if isinstance(parsed[0], str) and _SR.fullmatch(parsed[0]) else None
-        sg_device = parsed[1] if isinstance(parsed[1], str) and _SG.fullmatch(parsed[1]) else None
-        return sr_device, sg_device
+        result = self._run(mapping_argv(device), 10, expect_body=True, parsed=lambda item: _mapping_parts(item)[0] is not None)
+        return _mapping_parts(result)
 
     def _enabled(self) -> bool:
         directory = self.service.environ.get("DECKY_PLUGIN_SETTINGS_DIR")
@@ -315,18 +326,22 @@ class VirtualDiscs:
         modules = load_settings(path)["settings"]["modules"]
         return modules.get("virtual.cdemu") is not False
 
-    def _run(self, argv: list[str], timeout: float, *, expect_body: bool = False) -> Any:
-        """Call the user bus directly. A session unit is only the fallback when that bus is unreachable."""
-        env = session_environment(self.service.environ, self._euid())
-        direct = argv[len(_WRAP) :] if argv[: len(_WRAP)] == _WRAP else list(argv)
+    def _run(self, argv: list[str], timeout: float, *, expect_body: bool = False, parsed: Any = None) -> Any:
+        """Call the user bus directly. A session unit is the fallback when that reply is unusable."""
+        env = _virtual_bus_env(self.service.environ, self._euid())
+        direct = _direct_argv(argv)
         first = self.service.virtual_runner(direct, timeout=timeout, env=env)
-        if _good(first, expect_body=expect_body):
+        if _accepted(first, expect_body=expect_body, parsed=parsed):
             return first
-        if not _worth_session_retry(first, expect_body=expect_body):
+        if not _worth_session_retry(first, expect_body=expect_body, parsed=parsed):
             return first
-        second = self.service.virtual_runner(_session_wrap(direct), timeout=timeout, env=env)
-        if _good(second, expect_body=expect_body):
+        second = self.service.virtual_runner(_session_wrap(direct, env), timeout=timeout, env=env)
+        if _accepted(second, expect_body=expect_body, parsed=parsed):
             return second
+        self._log(
+            f"CDEmu call failed. direct exit {getattr(first, 'code', None)}: {_detail(first)} | "
+            f"session exit {getattr(second, 'code', None)}: {_detail(second)}"
+        )
         return first if _detail(first) else second
 
     def _euid(self) -> int:
@@ -425,12 +440,26 @@ def _cue_targets(cue: Path) -> list[Path]:
 
 
 def _json_data(result: Any) -> Any:
-    try:
-        payload = json.loads(result.stdout)
-    except (json.JSONDecodeError, AttributeError):
-        return None
+    payload = _loads_json(str(getattr(result, "stdout", "")))
     if isinstance(payload, dict):
-        return payload.get("data")
+        return payload.get("data") if "data" in payload else None
+    return payload
+
+
+def _loads_json(text: str) -> Any:
+    stripped = text.strip()
+    if not stripped:
+        return None
+    candidates = [stripped]
+    start = stripped.find("{")
+    end = stripped.rfind("}")
+    if start >= 0 and end > start:
+        candidates.append(stripped[start : end + 1])
+    for candidate in candidates:
+        try:
+            return json.loads(candidate)
+        except json.JSONDecodeError:
+            continue
     return None
 
 
@@ -444,28 +473,126 @@ def _number(result: Any) -> int | None:
         return data
     if isinstance(data, list) and len(data) == 1 and isinstance(data[0], int) and not isinstance(data[0], bool) and data[0] >= 0:
         return data[0]
-    text = str(getattr(result, "stdout", "")).strip()
-    match = re.fullmatch(r"(?:i\s+)?([0-9]+)", text)
+    text = str(getattr(result, "stdout", ""))
+    for line in text.splitlines():
+        match = re.fullmatch(r"(?:i\s+)?([0-9]+)", line.strip())
+        if match:
+            return int(match.group(1))
+    match = re.search(r'"data"\s*:\s*([0-9]+)', text)
+    if match:
+        return int(match.group(1))
+    match = re.search(r"(?:^|\s)i\s+([0-9]+)(?:\s|$)", text)
     if match:
         return int(match.group(1))
     return None
 
 
-def _good(result: Any, *, expect_body: bool) -> bool:
+def _status_parts(result: Any) -> tuple[str, list[str]]:
+    if getattr(result, "code", 1) != 0:
+        return "unavailable", []
+    parsed = _json_data(result)
+    if isinstance(parsed, list) and len(parsed) >= 2 and isinstance(parsed[0], bool):
+        files = [item for item in parsed[1] if isinstance(item, str)] if isinstance(parsed[1], list) else []
+        return ("loaded" if parsed[0] else "empty"), files
+    text = str(getattr(result, "stdout", ""))
+    loaded: bool | None = None
+    files: list[str] = []
+    saw_array = False
+    for line in text.splitlines():
+        stripped = line.strip()
+        if re.fullmatch(r"b\s+true", stripped, re.IGNORECASE):
+            loaded = True
+        elif re.fullmatch(r"b\s+false", stripped, re.IGNORECASE):
+            loaded = False
+        elif re.match(r"as\s+\d+", stripped):
+            saw_array = True
+            files = _quoted_strings(stripped)
+    if loaded is None:
+        match = re.search(r"(?:^|\s)b\s+(true|false)(?:\s|$)", text, re.IGNORECASE)
+        if match:
+            loaded = match.group(1).lower() == "true"
+            files = _quoted_strings(text)
+            saw_array = True
+    if loaded is None or not saw_array:
+        return "unavailable", []
+    return ("loaded" if loaded else "empty"), files
+
+
+def _mapping_parts(result: Any) -> tuple[str | None, str | None]:
+    if getattr(result, "code", 1) != 0:
+        return None, None
+    parsed = _json_data(result)
+    strings = [item for item in parsed if isinstance(item, str)] if isinstance(parsed, list) else []
+    if len(strings) < 2:
+        strings = _quoted_strings(str(getattr(result, "stdout", "")))
+    sr_device = next((item for item in strings if _SR.fullmatch(item)), None)
+    sg_device = next((item for item in strings if _SG.fullmatch(item)), None)
+    return sr_device, sg_device
+
+
+def _quoted_strings(text: str) -> list[str]:
+    return [re.sub(r"\\(.)", r"\1", item) for item in re.findall(r'"((?:\\.|[^"\\])*)"', text)]
+
+
+def _direct_argv(argv: list[str]) -> list[str]:
+    if argv[: len(_WRAP)] != _WRAP:
+        return list(argv)
+    rest = argv[len(_WRAP) :]
+    while rest and rest[0].startswith("--setenv="):
+        rest = rest[1:]
+    return list(rest)
+
+
+def _virtual_bus_env(base: dict[str, str], euid: int) -> dict[str, str]:
+    env = session_environment(base, euid)
+    runtime = env.get("XDG_RUNTIME_DIR", "")
+    if re.fullmatch(r"/run/user/[0-9]+", runtime) is None:
+        candidate = f"/run/user/{euid}"
+        if Path(candidate).is_dir():
+            runtime = candidate
+            env["XDG_RUNTIME_DIR"] = runtime
+    address = env.get("DBUS_SESSION_BUS_ADDRESS", "")
+    socket = address.removeprefix("unix:path=").split(",")[0] if address.startswith("unix:path=") else ""
+    if runtime and (not address or not socket or not Path(socket).exists()):
+        bus = Path(runtime) / "bus"
+        if bus.exists():
+            env["XDG_RUNTIME_DIR"] = runtime
+            env["DBUS_SESSION_BUS_ADDRESS"] = f"unix:path={bus.as_posix()}"
+    return env
+
+
+def _accepted(result: Any, *, expect_body: bool, parsed: Any) -> bool:
     if getattr(result, "code", 1) != 0:
         return False
     if expect_body and not str(getattr(result, "stdout", "")).strip():
         return False
+    if parsed is not None and not parsed(result):
+        return False
     return True
 
 
-def _worth_session_retry(result: Any, *, expect_body: bool) -> bool:
+def _worth_session_retry(result: Any, *, expect_body: bool, parsed: Any) -> bool:
     if getattr(result, "code", 1) == 127:
         return True
-    if expect_body and getattr(result, "code", 1) == 0 and not str(getattr(result, "stdout", "")).strip():
+    if expect_body and not str(getattr(result, "stdout", "")).strip():
+        return True
+    if parsed is not None and getattr(result, "code", 1) == 0 and not parsed(result):
         return True
     text = _detail(result).lower()
-    return "failed to connect to bus" in text or "no medium found" in text or "no such file or directory" in text
+    return any(
+        phrase in text
+        for phrase in (
+            "failed to connect to bus",
+            "launch helper",
+            "no medium found",
+            "no such file or directory",
+            "no owner",
+            "service unknown",
+            "not activatable",
+            "not provided",
+            "was not provided",
+        )
+    )
 
 
 def _daemon_not_ready(result: Any) -> bool:

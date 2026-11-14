@@ -171,9 +171,19 @@ def assert_dump_argv(argv: list[str]) -> None:
 
 _CDEMU_BUS = "net.sf.cdemu.CDEmuDaemon"
 _CDEMU_PATH = "/Daemon"
-_SESSION_WRAP = ["systemd-run", "--user", "--pipe", "--wait", "--collect", "--quiet"]
-_CDEMU_JSON = ["busctl", "--user", "--no-pager", "--json=short", "call", _CDEMU_BUS, _CDEMU_PATH, _CDEMU_BUS]
-_CDEMU_CALL = ["busctl", "--user", "--no-pager", "call", _CDEMU_BUS, _CDEMU_PATH, _CDEMU_BUS]
+_SESSION_WRAP = ["systemd-run", "--user", "--pipe", "--wait", "--collect"]
+_CDEMU_CALL = [
+    "busctl",
+    "--user",
+    "--no-pager",
+    "--allow-interactive-authorization=false",
+    "call",
+    _CDEMU_BUS,
+    _CDEMU_PATH,
+    _CDEMU_BUS,
+]
+_SETENV_RUNTIME = re.compile(r"--setenv=XDG_RUNTIME_DIR=/run/user/[0-9]+")
+_SETENV_BUS = re.compile(r"--setenv=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/[0-9]+/bus")
 _DISC_SUFFIXES = {".iso", ".cue"}
 
 
@@ -202,7 +212,12 @@ def assert_virtual_argv(argv: list[str]) -> None:
     if any("\n" in part or "\x00" in part for part in argv):
         raise UnsafeCommand("Command arguments contain unsupported characters.")
     if argv[: len(_SESSION_WRAP)] == _SESSION_WRAP:
-        assert_virtual_argv(argv[len(_SESSION_WRAP) :])
+        rest = argv[len(_SESSION_WRAP) :]
+        while rest and rest[0].startswith("--setenv="):
+            if _SETENV_RUNTIME.fullmatch(rest[0]) is None and _SETENV_BUS.fullmatch(rest[0]) is None:
+                raise UnsafeCommand("systemd-run may only pass the user bus address into a CDEmu call.")
+            rest = rest[1:]
+        assert_virtual_argv(rest)
         return
     program = Path(argv[0]).name
     if program == "systemctl":
@@ -214,15 +229,16 @@ def assert_virtual_argv(argv: list[str]) -> None:
         raise UnsafeCommand("systemctl may only start or query the cdemu-daemon user service.")
     if program != "busctl":
         raise UnsafeCommand("Virtual disc actions use busctl, not the cdemu client.")
-    if argv == [*_CDEMU_JSON, "GetNumberOfDevices"]:
-        return
-    if len(argv) == len(_CDEMU_JSON) + 3 and argv[: len(_CDEMU_JSON)] == _CDEMU_JSON:
-        method, signature, device = argv[-3:]
-        if method in {"DeviceGetStatus", "DeviceGetMapping"} and signature == "i" and _device_token(device):
-            return
     if argv[: len(_CDEMU_CALL)] == _CDEMU_CALL:
         tail = argv[len(_CDEMU_CALL) :]
-        if len(tail) == 3 and tail[0] == "DeviceUnload" and tail[1] == "i" and _device_token(tail[2]):
+        if tail == ["GetNumberOfDevices"]:
+            return
+        if (
+            len(tail) == 3
+            and tail[0] in {"DeviceGetStatus", "DeviceGetMapping", "DeviceUnload"}
+            and tail[1] == "i"
+            and _device_token(tail[2])
+        ):
             return
         if (
             len(tail) == 6
