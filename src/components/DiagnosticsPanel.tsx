@@ -35,6 +35,7 @@ export function DiagnosticsPanel({
   onUnmountIso,
   onLoadVirtual,
   onUnloadVirtual,
+  onLaunchShortcut,
   imageName,
   onImageName,
   outputRoot,
@@ -65,6 +66,7 @@ export function DiagnosticsPanel({
   onUnmountIso: (imageId: string) => void;
   onLoadVirtual: () => void;
   onUnloadVirtual: (slotId: string) => void;
+  onLaunchShortcut: (rungameid: string) => void;
   imageName: string;
   onImageName: (value: string) => void;
   outputRoot: string | null;
@@ -304,6 +306,27 @@ export function DiagnosticsPanel({
               </div>
               <ButtonItem layout="below" onClick={() => onUnloadVirtual(slot.slot_id)} disabled={busy}>
                 Unload DiscDeck virtual disc
+              </ButtonItem>
+            </PanelSectionRow>
+          ))
+        )}
+      </PanelSection>
+      <PanelSection title="Launch">
+        <PanelSectionRow>
+          <div>
+            Launch asks Steam to start a shortcut that is already in Steam. DiscDeck does not create shortcuts, read Proton prefixes, or start a game on its own. Autoplay stays off. A request is not a verified launch.
+          </div>
+        </PanelSectionRow>
+        {(snapshot?.shortcuts ?? []).length === 0 ? (
+          <PanelSectionRow>
+            <div>No Steam shortcuts were read.</div>
+          </PanelSectionRow>
+        ) : (
+          snapshot?.shortcuts?.map((shortcut) => (
+            <PanelSectionRow key={shortcut.rungameid}>
+              <div>{shortcut.app_name}</div>
+              <ButtonItem layout="below" onClick={() => onLaunchShortcut(shortcut.rungameid)} disabled={busy}>
+                Launch Steam shortcut
               </ButtonItem>
             </PanelSectionRow>
           ))

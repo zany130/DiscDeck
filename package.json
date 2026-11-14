@@ -1,7 +1,7 @@
 {
   "name": "discdeck",
-  "version": "0.4.4",
-  "description": "DiscDeck Decky plugin for physical discs, read-only filesystem images, Redumper preservation, and CDEmu virtual discs",
+  "version": "0.5.0",
+  "description": "DiscDeck Decky plugin for physical discs, read-only filesystem images, Redumper preservation, CDEmu virtual discs, and an explicit Steam shortcut launch",
   "type": "module",
   "scripts": {
     "build": "rollup -c",

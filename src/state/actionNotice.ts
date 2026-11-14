@@ -46,6 +46,11 @@ export function actionNotice(response: Envelope<Record<string, unknown>>): strin
     }
     return `Loaded into CDEmu device ${device}${where}. This is not a verified launch.`;
   }
+  if (action === "launch_shortcut") {
+    const name = response.result.app_name;
+    const label = typeof name === "string" && name.length > 0 ? name : "that shortcut";
+    return `Steam was asked to launch ${label}. This is not a verified launch.`;
+  }
   if (action === "unload_virtual") {
     return response.result.via === "already-gone"
       ? "That CDEmu device was already empty. The DiscDeck record was cleared."

@@ -16,6 +16,16 @@ TOOL_MARKERS = ("proton", "boxtron", "roberta", "luxtorpeda")
 MAX_VDF_BYTES = 1024 * 1024
 
 
+def steam_directories(home: Path | None) -> list[Path]:
+    if home is None:
+        return []
+    return _steam_roots(home, [])
+
+
+def find_steam_binary(environ: dict[str, str], root: Path | None = None) -> str | None:
+    return _find_steam(environ, [], root or Path("/"))
+
+
 def probe_steam(home: Path | None, environ: dict[str, str], root: Path | None = None) -> dict[str, Any]:
     reads: list[str] = []
     root = root or Path("/")

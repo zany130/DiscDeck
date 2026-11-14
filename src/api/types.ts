@@ -81,6 +81,11 @@ export interface DumpJob {
   hardware_validated?: boolean;
 }
 
+export interface SteamShortcut {
+  app_name: string;
+  rungameid: string;
+}
+
 export interface DiagnosticSnapshot {
   epoch: string;
   revision: number;
@@ -91,6 +96,7 @@ export interface DiagnosticSnapshot {
   modules: ModuleStatus[];
   drives: DriveObservation[];
   virtual_slots: VirtualSlot[];
+  shortcuts?: SteamShortcut[];
   jobs: DumpJob[];
   identity: {
     effective_user?: string | null;

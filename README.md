@@ -1,6 +1,6 @@
 # DiscDeck
 
-DiscDeck is a controller-first optical disc manager for Decky Loader on Bazzite and Steam Gaming Mode. It can read the drive inventory and, only after an explicit request, mount a filesystem read-only, eject through UDisks2, mount a read-only ISO, start a Redumper preservation job, or load a .cue or .iso into CDEmu. A Redumper exit code is not a verified dump, and a CDEmu load is not a verified launch. Game launch is not included. A readable inventory is not hardware validation.
+DiscDeck is a controller-first optical disc manager for Decky Loader on Bazzite and Steam Gaming Mode. It can read the drive inventory and, only after an explicit request, mount a filesystem read-only, eject through UDisks2, mount a read-only ISO, start a Redumper preservation job, load a .cue or .iso into CDEmu, or ask Steam to start a shortcut that already exists. A Redumper exit code is not a verified dump, a CDEmu load is not a verified launch, and a Steam request is not a verified launch. Autoplay is not included. A readable inventory is not hardware validation.
 
 A green CI run packages a development ZIP. It does not mount, eject, dump, load a virtual disc, launch a game, or prove that any of those operations work on hardware.
 
@@ -15,7 +15,7 @@ The Quick Access panel shows:
 - Effective permissions and named ACLs when `getfacl` is available
 - Redumper build 772, shipped in the plugin. Dumps do not use a system or container copy. Update Redumper can install a newer official build
 - VHBA and CDEmu presence. A refresh does not start the daemon. Load starts the cdemu-daemon user service only after a .cue or .iso is picked
-- Steam and Proton tool discovery. Shortcuts and prefixes are not opened
+- Steam and Proton tool discovery. Shortcut names are listed. Proton prefixes are not opened. Launch starts one existing shortcut only after the Launch button
 
 The normal plugin metadata does not request root. The only flag is `debug`, which the pinned Decky Loader uses to allow reloading.
 

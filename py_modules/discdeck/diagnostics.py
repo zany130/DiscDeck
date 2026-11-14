@@ -17,12 +17,13 @@ from discdeck.adapters.udisks2 import probe_udisks
 from discdeck.commands import CommandRunner
 from discdeck.dumps import DumpJobs
 from discdeck.images import ImageLibrary
+from discdeck.launch import ShortcutLaunch, list_shortcuts
 from discdeck.models import DEFAULT_MODULE_ENABLED, envelope_error, envelope_ok, module_status
 from discdeck.physical import GenerationTracker, PhysicalOperations
 from discdeck.redumper_bundle import RedumperInstallError, install_latest_redumper
 from discdeck.runtime import probe_runtime, read_build_info
 from discdeck.updates import UpdateError, check_development_update
-from discdeck.security import assert_dump_argv, assert_physical_udisks_argv, assert_virtual_argv
+from discdeck.security import assert_dump_argv, assert_launch_argv, assert_physical_udisks_argv, assert_virtual_argv
 from discdeck.virtual import VirtualDiscs
 from discdeck.settings import load_settings
 
@@ -33,7 +34,7 @@ LIMITATIONS = (
     "Runtime-directory durability across Decky restarts was not measured.",
     "Redumper disc runs only after an explicit dump, and only with the build shipped in the plugin or a newer official build saved by Update Redumper. Exit code 0 is not a verified dump.",
     "CDEmu loads a .cue or .iso only after an explicit request. That request can start the cdemu-daemon user service. A refresh does not start it, and a loaded image is not a verified launch.",
-    "Steam shortcuts and Proton prefixes are not read or modified.",
+    "Steam shortcuts are listed. Proton prefixes are not read. Launch asks Steam to start one existing shortcut and does not create shortcuts. Autoplay stays off. A request is not a verified launch.",
 )
 
 
@@ -59,6 +60,7 @@ class DiagnosticService:
         redumper_opener: Any = None,
         dump_runner: Any | None = None,
         virtual_runner: Any | None = None,
+        launch_runner: Any | None = None,
         dump_supervisor: Any | None = None,
         disk_free: Any | None = None,
     ) -> None:
@@ -74,6 +76,8 @@ class DiagnosticService:
         self.dumps = DumpJobs(self, supervisor=dump_supervisor, disk_free=disk_free)
         self.virtual_runner = virtual_runner or CommandRunner(policy=assert_virtual_argv)
         self.virtual = VirtualDiscs(self)
+        self.launch_runner = launch_runner or CommandRunner(policy=assert_launch_argv)
+        self.launch = ShortcutLaunch(self)
         self.sysfs_root = sysfs_root or Path("/sys")
         self.root = root or Path("/")
         self.dev_root = dev_root or Path("/dev")
@@ -111,6 +115,10 @@ class DiagnosticService:
         redumper = discover_redumper(self.environ)
         cdemu = probe_cdemu(self.runner, root=self.root, sysfs_root=self.sysfs_root, dev_root=self.dev_root)
         steam = probe_steam(self.home, self.environ, self.root)
+        shortcuts = list_shortcuts(self.home)
+        if shortcuts["opened"]:
+            steam["shortcuts_read"] = True
+            steam["message"] = "Steam shortcuts were listed. No Proton prefix was read and no game was launched."
         modules = _modules(
             enabled=enabled,
             checked_at=checked_at,
@@ -127,7 +135,7 @@ class DiagnosticService:
         return {
             "epoch": self.epoch,
             "revision": self.revision,
-            "phase": "4",
+            "phase": "5",
             "hardware_validated": False,
             "settings_revision": settings_state["settings_revision"],
             "settings": settings_state,
@@ -137,6 +145,7 @@ class DiagnosticService:
             "drives": devices["drives"],
             "images": self.images.public_records(),
             "virtual_slots": self.virtual.public_records(),
+            "shortcuts": shortcuts["shortcuts"],
             "jobs": self.dumps.public_jobs(),
             "probes": {
                 "runtime": runtime,
@@ -171,7 +180,7 @@ class DiagnosticService:
                 epoch=self.epoch,
             )
         return envelope_ok(
-            {"module": modules[0], "hardware_validated": False, "phase": "4"},
+            {"module": modules[0], "hardware_validated": False, "phase": "5"},
             self.revision,
             self.epoch,
         )
@@ -259,6 +268,9 @@ class DiagnosticService:
     def unload_virtual(self, slot_id: str) -> dict[str, Any]:
         return self.virtual.unload(slot_id)
 
+    def launch_shortcut(self, rungameid: str) -> dict[str, Any]:
+        return self.launch.launch(rungameid)
+
 
 def _modules(
     *,
@@ -329,7 +341,7 @@ def _modules(
             reason_code=steam["reason_code"],
             message=steam["message"],
             checked_at=checked_at,
-            details={"shortcuts_read": False, "launched": False},
+            details={"shortcuts_read": bool(steam.get("shortcuts_read")), "launched": False},
         ),
         module_status(
             "launch.autoplay",

@@ -4,7 +4,8 @@ Diagnostic probes stay read-only. Explicit actions may use the exact UDisks2
 calls this module recognizes: read-only ``Mount``, ``Unmount``, ``Drive.Eject``,
 read-only ``LoopSetup``, ``Loop.Delete``, and a ``BackingFile`` read. An
 explicit virtual-disc request may start the user ``cdemu-daemon`` service and
-call ``DeviceLoad`` or ``DeviceUnload`` on one device. The ``mount`` binary,
+call ``DeviceLoad`` or ``DeviceUnload`` on one device. An explicit launch may
+run the absolute ``steam`` binary with one ``steam://rungameid/`` URL. The ``mount`` binary,
 the ``cdemu`` client, and ioctl tray close stay refused.
 """
 
@@ -15,6 +16,24 @@ import re
 from pathlib import Path, PurePosixPath
 
 from discdeck.errors import UnsafeCommand
+
+
+_RUNGAME_URL = re.compile(r"steam://rungameid/[0-9]{1,20}")
+
+
+def assert_launch_argv(argv: list[str]) -> None:
+    """Allow one request for Steam to start an existing shortcut."""
+    if not argv or any(not isinstance(part, str) or part == "" for part in argv):
+        raise UnsafeCommand("Command arguments must be non-empty strings.")
+    if any("\n" in part or "\x00" in part for part in argv):
+        raise UnsafeCommand("Command arguments contain unsupported characters.")
+    if len(argv) != 2 or Path(argv[0]).name != "steam":
+        raise UnsafeCommand("Steam may only be asked to launch one shortcut.")
+    program = PurePosixPath(argv[0])
+    if not argv[0].startswith("/") or any(part in {"", ".", ".."} for part in program.parts):
+        raise UnsafeCommand("Steam must be an absolute path.")
+    if _RUNGAME_URL.fullmatch(argv[1]) is None:
+        raise UnsafeCommand("Steam may only open one steam://rungameid URL.")
 
 
 def assert_readonly_argv(argv: list[str]) -> None:

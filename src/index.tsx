@@ -2,7 +2,7 @@ import { addEventListener, definePlugin, openFilePicker, removeEventListener, to
 import { staticClasses } from "@decky/ui";
 import { useEffect, useState } from "react";
 import { FaCompactDisc } from "react-icons/fa";
-import { acknowledgeDump, cancelDump, checkUpdate, ejectDrive, emitProbeEvent, forceStopDump, getSnapshot, loadVirtual, mountFilesystem, mountIso, ping, readRedumperVersion, startDump, unloadVirtual, unmountFilesystem, unmountIso, updateRedumper } from "./api/bridge";
+import { acknowledgeDump, cancelDump, checkUpdate, ejectDrive, emitProbeEvent, forceStopDump, getSnapshot, launchShortcut, loadVirtual, mountFilesystem, mountIso, ping, readRedumperVersion, startDump, unloadVirtual, unmountFilesystem, unmountIso, updateRedumper } from "./api/bridge";
 import { requestDevelopmentInstall } from "./api/installUpdate";
 import { subscribeChanged } from "./api/events";
 import type { DiagnosticSnapshot } from "./api/types";
@@ -401,6 +401,25 @@ function Content() {
             const notice = caught instanceof Error ? caught.message : "The virtual disc request failed.";
             setError(notice);
             toaster.toast({ title: "DiscDeck virtual disc", body: notice });
+          })
+          .finally(() => {
+            setBusy(false);
+            refresh();
+          });
+      }}
+      onLaunchShortcut={(rungameid) => {
+        setPendingEjectId(null);
+        setBusy(true);
+        void launchShortcut(rungameid)
+          .then((response) => {
+            const notice = actionNotice(response);
+            setError(notice);
+            toaster.toast({ title: "DiscDeck launch", body: notice });
+          })
+          .catch((caught: unknown) => {
+            const notice = caught instanceof Error ? caught.message : "The Steam shortcut was not launched.";
+            setError(notice);
+            toaster.toast({ title: "DiscDeck launch", body: notice });
           })
           .finally(() => {
             setBusy(false);
