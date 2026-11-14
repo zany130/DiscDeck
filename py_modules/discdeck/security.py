@@ -2,8 +2,10 @@
 
 Diagnostic probes stay read-only. Explicit actions may use the exact UDisks2
 calls this module recognizes: read-only ``Mount``, ``Unmount``, ``Drive.Eject``,
-read-only ``LoopSetup``, ``Loop.Delete``, and a ``BackingFile`` read. The
-``mount`` binary and ioctl tray close stay refused.
+read-only ``LoopSetup``, ``Loop.Delete``, and a ``BackingFile`` read. An
+explicit virtual-disc request may start the user ``cdemu-daemon`` service and
+call ``DeviceLoad`` or ``DeviceUnload`` on one device. The ``mount`` binary,
+the ``cdemu`` client, and ioctl tray close stay refused.
 """
 
 from __future__ import annotations
@@ -165,6 +167,90 @@ def assert_dump_argv(argv: list[str]) -> None:
         raise UnsafeCommand("Redumper image name contains unsupported characters.")
     if len(argv) == 6 and _RETRIES.fullmatch(argv[5]) is None:
         raise UnsafeCommand("Redumper retries must be a single digit from 0 through 5.")
+
+
+_CDEMU_BUS = "net.sf.cdemu.CDEmuDaemon"
+_CDEMU_PATH = "/Daemon"
+_SESSION_WRAP = ["systemd-run", "--user", "--pipe", "--wait", "--collect"]
+_CDEMU_CALL = [
+    "busctl",
+    "--user",
+    "--no-pager",
+    "--allow-interactive-authorization=false",
+    "call",
+    _CDEMU_BUS,
+    _CDEMU_PATH,
+    _CDEMU_BUS,
+]
+_SETENV_RUNTIME = re.compile(r"--setenv=XDG_RUNTIME_DIR=/run/user/[0-9]+")
+_SETENV_BUS = re.compile(r"--setenv=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/[0-9]+/bus")
+_DISC_SUFFIXES = {".iso", ".cue"}
+
+
+def _device_token(token: str) -> bool:
+    if not token.isdigit():
+        return False
+    value = int(token)
+    return 0 <= value <= 15 and token == str(value)
+
+
+def _disc_image_token(path: str) -> bool:
+    if (
+        not path.startswith("/")
+        or path.startswith("/dev/")
+        or path != PurePosixPath(path).as_posix()
+        or any(part in {"", ".", ".."} for part in PurePosixPath(path).parts)
+    ):
+        return False
+    return PurePosixPath(path).suffix.lower() in _DISC_SUFFIXES
+
+
+def assert_virtual_argv(argv: list[str]) -> None:
+    """Allow one CDEmu status, load, or unload call, or starting its user service."""
+    if not argv or any(not isinstance(part, str) or part == "" for part in argv):
+        raise UnsafeCommand("Command arguments must be non-empty strings.")
+    if any("\n" in part or "\x00" in part for part in argv):
+        raise UnsafeCommand("Command arguments contain unsupported characters.")
+    if argv[: len(_SESSION_WRAP)] == _SESSION_WRAP:
+        rest = argv[len(_SESSION_WRAP) :]
+        while rest and rest[0].startswith("--setenv="):
+            if _SETENV_RUNTIME.fullmatch(rest[0]) is None and _SETENV_BUS.fullmatch(rest[0]) is None:
+                raise UnsafeCommand("systemd-run may only pass the user bus address into a CDEmu call.")
+            rest = rest[1:]
+        assert_virtual_argv(rest)
+        return
+    program = Path(argv[0]).name
+    if program == "systemctl":
+        if argv in (
+            ["systemctl", "--user", "start", "cdemu-daemon.service"],
+            ["systemctl", "--user", "is-active", "cdemu-daemon.service"],
+        ):
+            return
+        raise UnsafeCommand("systemctl may only start or query the cdemu-daemon user service.")
+    if program != "busctl":
+        raise UnsafeCommand("Virtual disc actions use busctl, not the cdemu client.")
+    if argv[: len(_CDEMU_CALL)] == _CDEMU_CALL:
+        tail = argv[len(_CDEMU_CALL) :]
+        if tail == ["GetNumberOfDevices"]:
+            return
+        if (
+            len(tail) == 3
+            and tail[0] in {"DeviceGetStatus", "DeviceGetMapping", "DeviceUnload"}
+            and tail[1] == "i"
+            and _device_token(tail[2])
+        ):
+            return
+        if (
+            len(tail) == 6
+            and tail[0] == "DeviceLoad"
+            and tail[1] == "iasa{sv}"
+            and _device_token(tail[2])
+            and tail[3] == "1"
+            and _disc_image_token(tail[4])
+            and tail[5] == "0"
+        ):
+            return
+    raise UnsafeCommand("Refusing a CDEmu call that is not status, DeviceLoad, or DeviceUnload.")
 
 
 def assert_physical_udisks_argv(argv: list[str]) -> None:

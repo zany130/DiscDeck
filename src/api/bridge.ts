@@ -18,6 +18,8 @@ export const startDump = callable<[driveId: string, generation: number, imageNam
 export const cancelDump = callable<[jobId: string], Envelope<Record<string, unknown>>>("cancel_dump");
 export const forceStopDump = callable<[jobId: string, confirmed?: boolean], Envelope<Record<string, unknown>>>("force_stop_dump");
 export const acknowledgeDump = callable<[jobId: string], Envelope<Record<string, unknown>>>("acknowledge_dump");
+export const loadVirtual = callable<[path: string], Envelope<Record<string, unknown>>>("load_virtual");
+export const unloadVirtual = callable<[slotId: string], Envelope<Record<string, unknown>>>("unload_virtual");
 
 export const PHASE0_PUBLIC_HELPERS = [
   "callable",

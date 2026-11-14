@@ -22,7 +22,8 @@ from discdeck.physical import GenerationTracker, PhysicalOperations
 from discdeck.redumper_bundle import RedumperInstallError, install_latest_redumper
 from discdeck.runtime import probe_runtime, read_build_info
 from discdeck.updates import UpdateError, check_development_update
-from discdeck.security import assert_dump_argv, assert_physical_udisks_argv
+from discdeck.security import assert_dump_argv, assert_physical_udisks_argv, assert_virtual_argv
+from discdeck.virtual import VirtualDiscs
 from discdeck.settings import load_settings
 
 LIMITATIONS = (
@@ -31,7 +32,7 @@ LIMITATIONS = (
     "A readable inventory is not a passed hardware gate. hardware_validated stays false.",
     "Runtime-directory durability across Decky restarts was not measured.",
     "Redumper disc runs only after an explicit dump, and only with the build shipped in the plugin or a newer official build saved by Update Redumper. Exit code 0 is not a verified dump.",
-    "An inactive CDEmu daemon is not activated and its device methods are not called.",
+    "CDEmu loads a .cue or .iso only after an explicit request. That request can start the cdemu-daemon user service. A refresh does not start it, and a loaded image is not a verified launch.",
     "Steam shortcuts and Proton prefixes are not read or modified.",
 )
 
@@ -57,6 +58,7 @@ class DiagnosticService:
         update_opener: Any = None,
         redumper_opener: Any = None,
         dump_runner: Any | None = None,
+        virtual_runner: Any | None = None,
         dump_supervisor: Any | None = None,
         disk_free: Any | None = None,
     ) -> None:
@@ -70,6 +72,8 @@ class DiagnosticService:
         self.images = ImageLibrary(self)
         self.dump_runner = dump_runner or CommandRunner(policy=assert_dump_argv)
         self.dumps = DumpJobs(self, supervisor=dump_supervisor, disk_free=disk_free)
+        self.virtual_runner = virtual_runner or CommandRunner(policy=assert_virtual_argv)
+        self.virtual = VirtualDiscs(self)
         self.sysfs_root = sysfs_root or Path("/sys")
         self.root = root or Path("/")
         self.dev_root = dev_root or Path("/dev")
@@ -123,7 +127,7 @@ class DiagnosticService:
         return {
             "epoch": self.epoch,
             "revision": self.revision,
-            "phase": "3",
+            "phase": "4",
             "hardware_validated": False,
             "settings_revision": settings_state["settings_revision"],
             "settings": settings_state,
@@ -132,7 +136,7 @@ class DiagnosticService:
             "modules": modules,
             "drives": devices["drives"],
             "images": self.images.public_records(),
-            "virtual_slots": [],
+            "virtual_slots": self.virtual.public_records(),
             "jobs": self.dumps.public_jobs(),
             "probes": {
                 "runtime": runtime,
@@ -167,7 +171,7 @@ class DiagnosticService:
                 epoch=self.epoch,
             )
         return envelope_ok(
-            {"module": modules[0], "hardware_validated": False, "phase": "3"},
+            {"module": modules[0], "hardware_validated": False, "phase": "4"},
             self.revision,
             self.epoch,
         )
@@ -248,6 +252,12 @@ class DiagnosticService:
 
     def acknowledge_dump(self, job_id: str) -> dict[str, Any]:
         return self.dumps.acknowledge(job_id)
+
+    def load_virtual(self, path: str) -> dict[str, Any]:
+        return self.virtual.load(path)
+
+    def unload_virtual(self, slot_id: str) -> dict[str, Any]:
+        return self.virtual.unload(slot_id)
 
 
 def _modules(
