@@ -14,8 +14,9 @@ class Plugin:
     """Decky lifecycle, diagnostics, and explicit disc actions.
 
     Mount is read-only. Eject requires confirmation. A dump runs only after
-    a request and is not verified by Redumper's exit code. Tray close,
-    virtual images, and game launch are not implemented.
+    a request and is not verified by Redumper's exit code. A virtual disc
+    loads only after a .cue or .iso is picked. Tray close and game launch
+    are not implemented.
     """
 
     def __init__(self) -> None:
@@ -61,7 +62,7 @@ class Plugin:
     async def ping(self) -> dict:
         self.service.revision += 1
         return envelope_ok(
-            {"pong": True, "phase": "3", "hardware_validated": False},
+            {"pong": True, "phase": "4", "hardware_validated": False},
             self.service.revision,
             self.service.epoch,
         )
@@ -131,4 +132,18 @@ class Plugin:
     async def acknowledge_dump(self, job_id: str) -> dict:
         result = self.service.acknowledge_dump(str(job_id))
         await decky.emit("discdeck:changed", {"epoch": self.service.epoch, "revision": self.service.revision, "domain": "dumps", "id": job_id})
+        return result
+
+    async def load_virtual(self, path: str) -> dict:
+        decky.logger.info("Virtual disc load requested.")
+        result = self.service.load_virtual(str(path))
+        if not result.get("ok"):
+            decky.logger.info("Virtual disc load failed: %s %s", result.get("code"), result.get("message"))
+        slot_id = result.get("result", {}).get("slot_id") if isinstance(result.get("result"), dict) else None
+        await decky.emit("discdeck:changed", {"epoch": self.service.epoch, "revision": self.service.revision, "domain": "virtual", "id": slot_id})
+        return result
+
+    async def unload_virtual(self, slot_id: str) -> dict:
+        result = self.service.unload_virtual(str(slot_id))
+        await decky.emit("discdeck:changed", {"epoch": self.service.epoch, "revision": self.service.revision, "domain": "virtual", "id": slot_id})
         return result

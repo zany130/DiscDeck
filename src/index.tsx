@@ -2,7 +2,7 @@ import { addEventListener, definePlugin, openFilePicker, removeEventListener, to
 import { staticClasses } from "@decky/ui";
 import { useEffect, useState } from "react";
 import { FaCompactDisc } from "react-icons/fa";
-import { acknowledgeDump, cancelDump, checkUpdate, ejectDrive, emitProbeEvent, forceStopDump, getSnapshot, mountFilesystem, mountIso, ping, readRedumperVersion, startDump, unmountFilesystem, unmountIso, updateRedumper } from "./api/bridge";
+import { acknowledgeDump, cancelDump, checkUpdate, ejectDrive, emitProbeEvent, forceStopDump, getSnapshot, loadVirtual, mountFilesystem, mountIso, ping, readRedumperVersion, startDump, unloadVirtual, unmountFilesystem, unmountIso, updateRedumper } from "./api/bridge";
 import { requestDevelopmentInstall } from "./api/installUpdate";
 import { subscribeChanged } from "./api/events";
 import type { DiagnosticSnapshot } from "./api/types";
@@ -10,6 +10,7 @@ import { DiagnosticsPanel } from "./components/DiagnosticsPanel";
 import { actionNotice } from "./state/actionNotice";
 import { chosenDumpFolder, dumpFolderRequest, publishDumpFolder, rejectedDumpFolderReason, rememberedDumpFolder, subscribeDumpFolder } from "./state/dumpRequest";
 import { chosenIsoPath, isoPickerRequest } from "./state/isoPicker";
+import { chosenDiscPath, virtualPickerRequest } from "./state/virtualPicker";
 import { acceptSnapshot } from "./state/snapshotReducer";
 import { updateNotice, type UpdateOffer } from "./state/updateNotice";
 
@@ -365,6 +366,60 @@ function Content() {
             const notice = caught instanceof Error ? caught.message : "The drive was not released.";
             setError(notice);
             toaster.toast({ title: "DiscDeck dump", body: notice });
+          })
+          .finally(() => {
+            setBusy(false);
+            refresh();
+          });
+      }}
+      onLoadVirtual={() => {
+        setPendingEjectId(null);
+        setBusy(true);
+        const request = virtualPickerRequest(snapshot?.identity.home);
+        void openFilePicker(
+          request.select,
+          request.startPath,
+          request.includeFiles,
+          request.includeFolders,
+          undefined,
+          [...request.extensions],
+          request.showHiddenFiles,
+          request.allowAllFiles,
+        )
+          .then((picked) => {
+            const path = chosenDiscPath(picked);
+            if (!path) {
+              return;
+            }
+            return loadVirtual(path).then((response) => {
+              const notice = actionNotice(response);
+              setError(notice);
+              toaster.toast({ title: "DiscDeck virtual disc", body: notice });
+            });
+          })
+          .catch((caught: unknown) => {
+            const notice = caught instanceof Error ? caught.message : "The virtual disc request failed.";
+            setError(notice);
+            toaster.toast({ title: "DiscDeck virtual disc", body: notice });
+          })
+          .finally(() => {
+            setBusy(false);
+            refresh();
+          });
+      }}
+      onUnloadVirtual={(slotId) => {
+        setPendingEjectId(null);
+        setBusy(true);
+        void unloadVirtual(slotId)
+          .then((response) => {
+            const notice = actionNotice(response);
+            setError(notice);
+            toaster.toast({ title: "DiscDeck virtual disc", body: notice });
+          })
+          .catch((caught: unknown) => {
+            const notice = caught instanceof Error ? caught.message : "Unload failed.";
+            setError(notice);
+            toaster.toast({ title: "DiscDeck virtual disc", body: notice });
           })
           .finally(() => {
             setBusy(false);

@@ -37,6 +37,20 @@ export function actionNotice(response: Envelope<Record<string, unknown>>): strin
   if (action === "acknowledge_dump") {
     return "This drive is no longer held by that dump. The output was kept and was not verified.";
   }
+  if (action === "load_virtual") {
+    const device = response.result.device_number;
+    const node = response.result.sr_device;
+    const where = typeof node === "string" && node.length > 0 ? ` at ${node}` : "";
+    if (response.result.via === "already-loaded") {
+      return `That image is already in CDEmu device ${device}. This is not a verified launch.`;
+    }
+    return `Loaded into CDEmu device ${device}${where}. This is not a verified launch.`;
+  }
+  if (action === "unload_virtual") {
+    return response.result.via === "already-gone"
+      ? "That CDEmu device was already empty. The DiscDeck record was cleared."
+      : "Unloaded the DiscDeck virtual disc.";
+  }
   if (action === "eject") {
     if (response.result.via === "user-eject") {
       return "UDisks2 did not authorize this process. The tray command ran as the current user.";

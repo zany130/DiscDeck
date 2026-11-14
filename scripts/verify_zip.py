@@ -62,8 +62,8 @@ def verify_zip(path: Path) -> list[str]:
             info = json.loads(archive.read(info_name))
             if info.get("hardware_validated") is not False:
                 errors.append("build_info.json claims hardware validation.")
-            if info.get("phase") != "3":
-                errors.append("build_info.json is not phase 3.")
+            if info.get("phase") != "4":
+                errors.append("build_info.json is not phase 4.")
             if _VERSION.fullmatch(str(info.get("version") or "")) is None:
                 errors.append("build_info.json has no plugin version.")
         package_name = "DiscDeck/package.json"

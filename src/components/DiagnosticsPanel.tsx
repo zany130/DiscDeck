@@ -33,6 +33,8 @@ export function DiagnosticsPanel({
   onEject,
   onPickIso,
   onUnmountIso,
+  onLoadVirtual,
+  onUnloadVirtual,
   imageName,
   onImageName,
   outputRoot,
@@ -61,6 +63,8 @@ export function DiagnosticsPanel({
   onEject: (driveId: string, generation: number) => void;
   onPickIso: () => void;
   onUnmountIso: (imageId: string) => void;
+  onLoadVirtual: () => void;
+  onUnloadVirtual: (slotId: string) => void;
   imageName: string;
   onImageName: (value: string) => void;
   outputRoot: string | null;
@@ -269,6 +273,37 @@ export function DiagnosticsPanel({
               </div>
               <ButtonItem layout="below" onClick={() => onUnmountIso(image.image_id)} disabled={busy}>
                 Unmount DiscDeck image
+              </ButtonItem>
+            </PanelSectionRow>
+          ))
+        )}
+      </PanelSection>
+      <PanelSection title="Virtual disc">
+        <PanelSectionRow>
+          <div>
+            A virtual disc uses the CDEmu daemon installed on this system. Pick a .cue or a .iso. If the daemon is not running, Load starts the cdemu-daemon user service. A refresh does not start it. VHBA is not loaded by DiscDeck. A loaded image is not a verified launch.
+          </div>
+        </PanelSectionRow>
+        <PanelSectionRow>
+          <ButtonItem layout="below" onClick={onLoadVirtual} disabled={busy}>
+            Choose cue or ISO and load
+          </ButtonItem>
+        </PanelSectionRow>
+        {(snapshot?.virtual_slots ?? []).length === 0 ? (
+          <PanelSectionRow>
+            <div>No DiscDeck virtual disc is recorded.</div>
+          </PanelSectionRow>
+        ) : (
+          snapshot?.virtual_slots.map((slot) => (
+            <PanelSectionRow key={slot.slot_id}>
+              <div>
+                {`Device ${slot.device_number}`}
+                {slot.sr_device ? ` · ${slot.sr_device}` : ""}
+                {` · ${slot.image_path}`}
+                {slot.state ? ` · ${slot.state}` : ""} · not hardware-validated
+              </div>
+              <ButtonItem layout="below" onClick={() => onUnloadVirtual(slot.slot_id)} disabled={busy}>
+                Unload DiscDeck virtual disc
               </ButtonItem>
             </PanelSectionRow>
           ))
