@@ -187,6 +187,28 @@ class VirtualDiscTests(unittest.TestCase):
             self.assertEqual(result["result"]["sr_device"], "/dev/sr4")
             self.assertFalse(any(call[0] == "systemd-run" for call in virtual.calls))
 
+    def test_compact_busctl_status_loads_the_image(self) -> None:
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            image = root / "game.iso"
+            image.write_bytes(b"iso")
+            service, virtual = self._service(root, active=True, image=image)
+            banner = (
+                "Running as unit: run-p118197-i131251.service Finished with result: success "
+                "Main processes terminated with: code=exited, status=0/SUCCESS Service runtime: 9ms "
+                "CPU time consumed: 4ms Memory peak: 1.2M (swap: 0B) "
+            )
+            virtual.before[tuple(status_argv(0))] = _result(status_argv(0), f"{banner}bas false 0\n")
+            virtual.after[tuple(status_argv(0))] = _result(status_argv(0), f'bas true 1 "{image}"\n')
+            virtual.before[tuple(mapping_argv(0))] = _result(mapping_argv(0), 'ss "/dev/sr4" "/dev/sg6"\n')
+            virtual.after[tuple(mapping_argv(0))] = virtual.before[tuple(mapping_argv(0))]
+            result = service.load_virtual(str(image))
+            self.assertTrue(result["ok"], result)
+            self.assertEqual(result["result"]["device_number"], 0)
+            self.assertEqual(result["result"]["sr_device"], "/dev/sr4")
+            self.assertIn(load_argv(0, str(image)), virtual.calls)
+            self.assertFalse(any(call[0] == "systemd-run" for call in virtual.calls))
+
     def test_launch_helper_failure_retries_inside_the_session_unit(self) -> None:
         with TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -221,6 +243,15 @@ class VirtualDiscTests(unittest.TestCase):
         loaded = CommandResult(["busctl"], 0, 'b true\nas 1 "/games/game.iso"\n', "")
         self.assertEqual(_status_parts(empty), ("empty", []))
         self.assertEqual(_status_parts(loaded), ("loaded", ["/games/game.iso"]))
+        self.assertEqual(_status_parts(CommandResult(["busctl"], 0, "bas false 0\n", "")), ("empty", []))
+        self.assertEqual(
+            _status_parts(CommandResult(["busctl"], 0, 'bas true 1 "/games/my game.iso"\n', "")),
+            ("loaded", ["/games/my game.iso"]),
+        )
+        self.assertEqual(
+            _mapping_parts(CommandResult(["busctl"], 0, 'ss "/dev/sr4" "/dev/sg6"\n', "")),
+            ("/dev/sr4", "/dev/sg6"),
+        )
         self.assertEqual(
             _mapping_parts(CommandResult(["busctl"], 0, 's "/dev/sr4"\ns "/dev/sg6"\n', "")),
             ("/dev/sr4", "/dev/sg6"),

@@ -495,6 +495,9 @@ def _status_parts(result: Any) -> tuple[str, list[str]]:
         files = [item for item in parsed[1] if isinstance(item, str)] if isinstance(parsed[1], list) else []
         return ("loaded" if parsed[0] else "empty"), files
     text = str(getattr(result, "stdout", ""))
+    compact = _compact_status(text)
+    if compact is not None:
+        return compact
     loaded: bool | None = None
     files: list[str] = []
     saw_array = False
@@ -516,6 +519,18 @@ def _status_parts(result: Any) -> tuple[str, list[str]]:
     if loaded is None or not saw_array:
         return "unavailable", []
     return ("loaded" if loaded else "empty"), files
+
+
+def _compact_status(text: str) -> tuple[str, list[str]] | None:
+    """busctl prints a `(bas)` reply as `bas false 0` or `bas true 1 "/path"`."""
+    match = re.search(r"(?:\(bas\)|bas)\s+(true|false)\s+([0-9]+)\b", text, re.IGNORECASE)
+    if match is None:
+        return None
+    count = int(match.group(2))
+    files = _quoted_strings(text[match.end() :])
+    if len(files) < count:
+        return None
+    return ("loaded" if match.group(1).lower() == "true" else "empty"), files[:count]
 
 
 def _mapping_parts(result: Any) -> tuple[str | None, str | None]:
