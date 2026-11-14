@@ -38,6 +38,17 @@ describe("actionNotice", () => {
     ).toBe("Loaded into CDEmu device 0 at /dev/sr4. This is not a verified launch.");
   });
 
+  it("says a Steam shortcut request is not verified", () => {
+    expect(
+      actionNotice({
+        ok: true,
+        result: { action: "launch_shortcut", app_name: "Demo", rungameid: "1" },
+        epoch: "epoch",
+        revision: 10,
+      }),
+    ).toBe("Steam was asked to launch Demo. This is not a verified launch.");
+  });
+
   it("names an accepted eject", () => {
     expect(actionNotice({ ok: true, result: { action: "eject", via: "direct" }, epoch: "epoch", revision: 5 })).toBe(
       "UDisks2 accepted eject.",

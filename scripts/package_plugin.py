@@ -78,7 +78,7 @@ def stage_plugin(source: Path, stage: Path, commit: str | None, redumper: tuple[
     info = {
         "commit": commit,
         "channel": "development",
-        "phase": "4",
+        "phase": "5",
         "version": version if isinstance(version, str) else None,
         "hardware_validated": False,
     }

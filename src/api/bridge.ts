@@ -20,6 +20,7 @@ export const forceStopDump = callable<[jobId: string, confirmed?: boolean], Enve
 export const acknowledgeDump = callable<[jobId: string], Envelope<Record<string, unknown>>>("acknowledge_dump");
 export const loadVirtual = callable<[path: string], Envelope<Record<string, unknown>>>("load_virtual");
 export const unloadVirtual = callable<[slotId: string], Envelope<Record<string, unknown>>>("unload_virtual");
+export const launchShortcut = callable<[rungameid: string], Envelope<Record<string, unknown>>>("launch_shortcut");
 
 export const PHASE0_PUBLIC_HELPERS = [
   "callable",

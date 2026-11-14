@@ -19,7 +19,7 @@ This table separates the 2026-11-09 passive inventory from operations Phase 0 ha
 | VHBA | Module loaded, version `20260313`, signed, control node ACL present | Checks `/sys/module/vhba` and the control node. Does not `modprobe` | P0-E BLOCKED |
 | CDEmu | Client and daemon 3.3.1 installed. User service inactive and activatable. Bus name had no owner. On 2026-11-14 at about 12:30 PM ET the user reported that mounting and unmounting works. The device node was not copied | A refresh reports `DAEMON_INACTIVE` and does not start the daemon. An explicit load can start the user service and call `DeviceLoad` for one .cue or .iso | P0-E BLOCKED |
 | ISO loop | On 2026-11-10 version 0.2.1 mounted a picked ISO read-only, refused a non-ISO file, and unmounted that loop. The mount path was not copied | Requests a read-only `LoopSetup` only after an ISO is picked | P0-F BLOCKED |
-| Steam / Proton | Native Steam and several Proton tool directories | Lists tool directory names. Does not read shortcuts or prefixes and does not launch | P0-G BLOCKED |
+| Steam / Proton | Native Steam and several Proton tool directories | Lists tool directory names and shortcut names from `shortcuts.vdf`. Does not read Proton prefixes or create shortcuts. An explicit request can ask Steam to start one existing shortcut. That launch has not been run on this machine | P0-G BLOCKED |
 | Launcher policy | Not configured | Experimental launch and autoplay stay off unless a valid settings file says otherwise. They still cannot become `active` while untested | P0-G / P0-H BLOCKED |
 | Recovery | No DiscDeck process existed | Unload does not eject or delete user data. Restart behavior is untested | P0-H BLOCKED |
 
@@ -32,7 +32,7 @@ This table separates the 2026-11-09 passive inventory from operations Phase 0 ha
 | `dump.redumper` | Yes | `ready` when the binary and an accessible sg node are visible; otherwise `missing`, `denied`, or `untested` | A dump starts only from the Preservation button. Exit 0 is not verification |
 | `virtual.cdemu` | Yes | `untested` when installed but inactive; `missing` when absent | Shows VHBA and daemon state. No load |
 | `resources.pcgamingwiki` | Yes | `untested` | No network request |
-| `launch.experimental` | No | `disabled` | No launch control |
+| `launch.experimental` | No | `disabled` | Lists shortcut names. Launch is a button. Autoplay stays off |
 | `launch.autoplay` | No | `disabled` | No autoplay |
 
 An enabled flag cannot turn any of these modules `active` in Phase 0. The backend rejects `capability: ready`.
